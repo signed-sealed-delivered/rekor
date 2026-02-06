@@ -18,7 +18,6 @@ package tuf
 import (
 	"crypto/ed25519"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -196,7 +195,7 @@ func (k PublicKey) Identities() ([]identity.Identity, error) {
 			fallthrough
 		case "ecdsa":
 			// parse and marshal to check format is correct
-			pub, err := x509.ParsePKIXPublicKey([]byte(verifier.Public()))
+			pub, err := cryptoutils.UnmarshalDERToPublicKey([]byte(verifier.Public()))
 			if err != nil {
 				return nil, err
 			}

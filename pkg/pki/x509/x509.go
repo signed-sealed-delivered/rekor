@@ -134,7 +134,8 @@ func NewPublicKey(r io.Reader) (*PublicKey, error) {
 
 	switch block.Type {
 	case string(cryptoutils.PublicKeyPEMType):
-		key, err := x509.ParsePKIXPublicKey(block.Bytes)
+		// Use cryptoutils to support all key types including PQ keys
+		key, err := cryptoutils.UnmarshalPEMToPublicKey(trimmedRawPub)
 		if err != nil {
 			return nil, err
 		}

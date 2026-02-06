@@ -98,6 +98,32 @@ paths:
         default:
           $ref: '#/responses/InternalServerError'
 
+  /api/v1/log/publicKeys:
+    get:
+      summary: Retrieve all public keys that can be used to validate the signed tree head
+      description: Returns all public keys for hybrid signing mode. In single-signer mode, returns an array with one key.
+      operationId: getPublicKeys
+      tags:
+        - pubkey
+      parameters:
+        - in: query
+          name: treeID
+          type: string
+          pattern: '^[0-9]+$'
+          description: The tree ID of the tree you wish to get public keys for
+      produces:
+        - application/json
+      responses:
+        200:
+          description: The public keys
+          schema:
+            type: array
+            items:
+              type: string
+              description: PEM-encoded public key
+        default:
+          $ref: '#/responses/InternalServerError'
+
   /api/v1/log/proof:
     get:
       summary: Get information required to generate a consistency proof for the transparency log

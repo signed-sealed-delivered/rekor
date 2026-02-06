@@ -163,3 +163,33 @@ func CreateAndSignCheckpoint(ctx context.Context, hostname string, treeID int64,
 	}
 	return scBytes, nil
 }
+
+// CreateAndSignCheckpointMultiple creates a signed checkpoint with multiple signers (for hybrid mode).
+// Each signer adds its signature to the checkpoint, allowing verifiers to validate using any of the signatures.
+func CreateAndSignCheckpointMultiple(ctx context.Context, hostname string, treeID int64, treeSize uint64, rootHash []byte, signers []signature.Signer) ([]byte, error) {
+	if len(signers) == 0 {
+		return nil, fmt.Errorf("no signers provided")
+	}
+
+	sth, err := CreateSignedCheckpoint(Checkpoint{
+		Origin: fmt.Sprintf("%s - %d", hostname, treeID),
+		Size:   treeSize,
+		Hash:   rootHash,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error creating checkpoint: %w", err)
+	}
+
+	// Sign with all signers
+	for i, signer := range signers {
+		if _, err := sth.Sign(hostname, signer, options.WithContext(ctx)); err != nil {
+			return nil, fmt.Errorf("error signing checkpoint with signer %d: %w", i, err)
+		}
+	}
+
+	scBytes, err := sth.MarshalText()
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling checkpoint: %w", err)
+	}
+	return scBytes, nil
+}

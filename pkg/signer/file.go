@@ -19,9 +19,10 @@ package signer
 import (
 	"crypto"
 	"fmt"
+	"os"
 
+	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"github.com/sigstore/sigstore/pkg/signature"
-	"go.step.sm/crypto/pemutil"
 )
 
 // returns an file based signer and verify, used for spinning up local instances
@@ -30,14 +31,34 @@ type File struct {
 }
 
 func NewFile(keyPath, keyPass string) (*File, error) {
-	opaqueKey, err := pemutil.Read(keyPath, pemutil.WithPassword([]byte(keyPass)))
+	pemBytes, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("file: cannot read key file %s: %w", keyPath, err)
+	}
+
+	var passFunc cryptoutils.PassFunc
+	if keyPass != "" {
+		passFunc = func(bool) ([]byte, error) {
+			return []byte(keyPass), nil
+		}
+	}
+
+	privateKey, err := cryptoutils.UnmarshalPEMToPrivateKey(pemBytes, passFunc)
 	if err != nil {
 		return nil, fmt.Errorf("file: provide a valid signer, %s is not valid: %w", keyPath, err)
 	}
 
-	signer, err := signature.LoadSignerVerifier(opaqueKey, crypto.SHA256)
+	// Get the appropriate hash function for this key type
+	// PQ keys (ML-DSA) use crypto.Hash(0), classical keys use their default hash
+	publicKey := privateKey.(crypto.Signer).Public()
+	algDetails, err := signature.GetDefaultAlgorithmDetails(publicKey)
 	if err != nil {
-		return nil, fmt.Errorf(`file: loaded private key from %s can't be used to sign: %w`, keyPath, err)
+		return nil, fmt.Errorf("file: failed to get algorithm details for key %s: %w", keyPath, err)
+	}
+
+	signer, err := signature.LoadSignerVerifier(privateKey, algDetails.GetHashType())
+	if err != nil {
+		return nil, fmt.Errorf("file: loaded private key from %s can't be used to sign: %w", keyPath, err)
 	}
 	return &File{signer}, nil
 }

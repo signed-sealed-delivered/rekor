@@ -19,19 +19,15 @@ import (
 	"bufio"
 	"bytes"
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/ed25519"
-	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"github.com/sigstore/sigstore/pkg/signature"
-	"github.com/sigstore/sigstore/pkg/signature/options"
 	"golang.org/x/mod/sumdb/note"
 )
 
@@ -70,14 +66,15 @@ func (s *SignedNote) Sign(identity string, signer signature.Signer, opts signatu
 }
 
 // Verify checks that one of the signatures can be successfully verified using
-// the supplied public key
+// the supplied public key. In hybrid signing mode (multiple signatures with different
+// key types), this function finds and verifies the signature matching the verifier's
+// key hash.
 func (s SignedNote) Verify(verifier signature.Verifier) bool {
 	if len(s.Signatures) == 0 {
 		return false
 	}
 
 	msg := []byte(s.Note)
-	digest := sha256.Sum256(msg)
 
 	pk, err := verifier.PublicKey()
 	if err != nil {
@@ -88,26 +85,42 @@ func (s SignedNote) Verify(verifier signature.Verifier) bool {
 		return false
 	}
 
-	for _, s := range s.Signatures {
-		sigBytes, err := base64.StdEncoding.DecodeString(s.Base64)
+	for _, sig := range s.Signatures {
+		// Skip signatures that don't match this verifier's key hash.
+		// This allows hybrid mode where multiple signatures with different
+		// key types are present.
+		if sig.Hash != verifierPkHash {
+			continue
+		}
+
+		sigBytes, err := base64.StdEncoding.DecodeString(sig.Base64)
 		if err != nil {
 			return false
 		}
 
-		if s.Hash != verifierPkHash {
+		// Let the verifier handle hashing internally - it knows the appropriate
+		// hash function for its key type (SHA-256 for ECDSA/RSA, internal for Ed25519/ML-DSA)
+		if err := verifier.VerifySignature(bytes.NewReader(sigBytes), bytes.NewReader(msg)); err != nil {
 			return false
 		}
+		// Found and verified a matching signature
+		return true
+	}
+	// No signature matched the verifier's key hash
+	return false
+}
 
-		opts := []signature.VerifyOption{}
-		switch pk.(type) {
-		case *rsa.PublicKey, *ecdsa.PublicKey:
-			opts = append(opts, options.WithDigest(digest[:]))
-		case ed25519.PublicKey:
-			break
-		default:
-			return false
-		}
-		if err := verifier.VerifySignature(bytes.NewReader(sigBytes), bytes.NewReader(msg), opts...); err != nil {
+// VerifyAll checks that ALL provided verifiers have corresponding valid signatures.
+// This is the recommended verification method for hybrid signing mode, as it ensures
+// security from all signature algorithms (e.g., both ECDSA and ML-DSA must be valid).
+// Returns false if any verifier lacks a valid signature.
+func (s SignedNote) VerifyAll(verifiers []signature.Verifier) bool {
+	if len(s.Signatures) == 0 || len(verifiers) == 0 {
+		return false
+	}
+
+	for _, verifier := range verifiers {
+		if !s.Verify(verifier) {
 			return false
 		}
 	}
@@ -201,7 +214,7 @@ func SignedNoteValidator(strToValidate string) bool {
 }
 
 func getPublicKeyHash(publicKey crypto.PublicKey) (uint32, error) {
-	pubKeyBytes, err := x509.MarshalPKIXPublicKey(publicKey)
+	pubKeyBytes, err := cryptoutils.MarshalPublicKeyToDER(publicKey)
 	if err != nil {
 		return 0, fmt.Errorf("marshalling public key: %w", err)
 	}

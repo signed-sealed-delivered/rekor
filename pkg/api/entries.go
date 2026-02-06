@@ -65,7 +65,13 @@ const (
 	maxSearchQueries = 10
 )
 
-func signEntry(ctx context.Context, signer signature.Signer, entry models.LogEntryAnon) ([]byte, error) {
+// signEntryMultiple signs an entry with multiple signers (for hybrid mode).
+// Returns all signatures; the first one is the primary for backwards compatibility.
+func signEntryMultiple(ctx context.Context, signers []signature.Signer, entry models.LogEntryAnon) ([][]byte, error) {
+	if len(signers) == 0 {
+		return nil, fmt.Errorf("no signers provided")
+	}
+
 	payload, err := entry.MarshalBinary()
 	if err != nil {
 		return nil, fmt.Errorf("marshalling error: %w", err)
@@ -74,11 +80,16 @@ func signEntry(ctx context.Context, signer signature.Signer, entry models.LogEnt
 	if err != nil {
 		return nil, fmt.Errorf("canonicalizing error: %w", err)
 	}
-	signature, err := signer.SignMessage(bytes.NewReader(canonicalized), options.WithContext(ctx))
-	if err != nil {
-		return nil, fmt.Errorf("signing error: %w", err)
+
+	signatures := make([][]byte, len(signers))
+	for i, signer := range signers {
+		sig, err := signer.SignMessage(bytes.NewReader(canonicalized), options.WithContext(ctx))
+		if err != nil {
+			return nil, fmt.Errorf("signing error for signer %d: %w", i, err)
+		}
+		signatures[i] = sig
 	}
-	return signature, nil
+	return signatures, nil
 }
 
 // logEntryFromLeaf creates a signed LogEntry struct from trillian structs
@@ -108,10 +119,13 @@ func logEntryFromLeaf(ctx context.Context, leaf *trillian.LogLeaf, signedLogRoot
 		IntegratedTime: conv.Pointer(leaf.IntegrateTimestamp.AsTime().Unix()),
 	}
 
-	signature, err := signEntry(ctx, logRange.Signer, logEntryAnon)
+	// Sign with all signers (hybrid mode support)
+	signatures, err := signEntryMultiple(ctx, logRange.Signers, logEntryAnon)
 	if err != nil {
 		return nil, fmt.Errorf("signing entry error: %w", err)
 	}
+	// Use first signature for backwards compatibility
+	primarySignature := signatures[0]
 
 	// If tree ID is inactive, use cached checkpoint
 	var sc string
@@ -119,7 +133,8 @@ func logEntryFromLeaf(ctx context.Context, leaf *trillian.LogLeaf, signedLogRoot
 	if ok {
 		sc = val
 	} else {
-		scBytes, err := util.CreateAndSignCheckpoint(ctx, viper.GetString("rekor_server.hostname"), tid, root.TreeSize, root.RootHash, logRange.Signer)
+		// Sign checkpoint with all signers (hybrid mode support)
+		scBytes, err := util.CreateAndSignCheckpointMultiple(ctx, viper.GetString("rekor_server.hostname"), tid, root.TreeSize, root.RootHash, logRange.Signers)
 		if err != nil {
 			return nil, err
 		}
@@ -180,7 +195,7 @@ func logEntryFromLeaf(ctx context.Context, leaf *trillian.LogLeaf, signedLogRoot
 
 	logEntryAnon.Verification = &models.LogEntryAnonVerification{
 		InclusionProof:       &inclusionProof,
-		SignedEntryTimestamp: strfmt.Base64(signature),
+		SignedEntryTimestamp: strfmt.Base64(primarySignature),
 	}
 
 	return models.LogEntry{
@@ -293,6 +308,7 @@ func createLogEntry(params entries.CreateLogEntryParams) (models.LogEntry, middl
 		return nil, handleRekorAPIError(params, http.StatusBadRequest, err, fmt.Sprintf(validationError, err))
 	}
 
+	// KEV - need to handle this
 	checkedAlgorithmResult, err := checkEntryAlgorithms(entry)
 	if err != nil {
 		return nil, handleRekorAPIError(params, http.StatusBadRequest, err, fmt.Sprintf(validationError, err))
@@ -426,10 +442,14 @@ func createLogEntry(params entries.CreateLogEntryParams) (models.LogEntry, middl
 		}
 	}
 
-	signature, err := signEntry(ctx, api.logRanges.GetActive().Signer, logEntryAnon)
+	// Sign with all signers (hybrid mode support)
+	activeRange := api.logRanges.GetActive()
+	signatures, err := signEntryMultiple(ctx, activeRange.Signers, logEntryAnon)
 	if err != nil {
 		return nil, handleRekorAPIError(params, http.StatusInternalServerError, fmt.Errorf("signing entry error: %w", err), signingError)
 	}
+	// Use first signature for backwards compatibility
+	primarySignature := signatures[0]
 
 	root := &ttypes.LogRootV1{}
 	if err := root.UnmarshalBinary(resp.GetLeafAndProofResult.SignedLogRoot.LogRoot); err != nil {
@@ -440,7 +460,8 @@ func createLogEntry(params entries.CreateLogEntryParams) (models.LogEntry, middl
 		hashes = append(hashes, hex.EncodeToString(hash))
 	}
 
-	scBytes, err := util.CreateAndSignCheckpoint(ctx, viper.GetString("rekor_server.hostname"), api.ActiveTreeID(), root.TreeSize, root.RootHash, api.logRanges.GetActive().Signer)
+	// Sign checkpoint with all signers (hybrid mode support)
+	scBytes, err := util.CreateAndSignCheckpointMultiple(ctx, viper.GetString("rekor_server.hostname"), api.ActiveTreeID(), root.TreeSize, root.RootHash, activeRange.Signers)
 	if err != nil {
 		return nil, handleRekorAPIError(params, http.StatusInternalServerError, err, sthGenerateError)
 	}
@@ -455,7 +476,7 @@ func createLogEntry(params entries.CreateLogEntryParams) (models.LogEntry, middl
 
 	logEntryAnon.Verification = &models.LogEntryAnonVerification{
 		InclusionProof:       &inclusionProof,
-		SignedEntryTimestamp: strfmt.Base64(signature),
+		SignedEntryTimestamp: strfmt.Base64(primarySignature),
 	}
 
 	logEntry := models.LogEntry{

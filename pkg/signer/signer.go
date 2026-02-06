@@ -19,6 +19,8 @@ package signer
 import (
 	"context"
 	"crypto"
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -38,8 +40,8 @@ import (
 	_ "github.com/sigstore/sigstore/pkg/signature/kms/hashivault"
 )
 
-// SigningConfig initializes the signer for a specific shard
-type SigningConfig struct {
+// SignerConfig configures a single signer
+type SignerConfig struct {
 	SigningSchemeOrKeyPath string `json:"signingSchemeOrKeyPath" yaml:"signingSchemeOrKeyPath"`
 	FileSignerPassword     string `json:"fileSignerPassword" yaml:"fileSignerPassword"`
 	TinkKEKURI             string `json:"tinkKEKURI" yaml:"tinkKEKURI"`
@@ -48,9 +50,51 @@ type SigningConfig struct {
 	GCPKMSTimeout          uint   `json:"gcpkmsTimeout" yaml:"gcpkmsTimeout"`
 }
 
-func (sc SigningConfig) IsUnset() bool {
+func (sc SignerConfig) IsUnset() bool {
 	return sc.SigningSchemeOrKeyPath == "" && sc.FileSignerPassword == "" &&
 		sc.TinkKEKURI == "" && sc.TinkKeysetPath == ""
+}
+
+// SigningConfig initializes signers for a specific shard.
+// For backwards compatibility, the single-signer fields are supported.
+// For hybrid mode, use the Signers array.
+type SigningConfig struct {
+	// Single signer configuration (backwards compatible)
+	SigningSchemeOrKeyPath string `json:"signingSchemeOrKeyPath" yaml:"signingSchemeOrKeyPath"`
+	FileSignerPassword     string `json:"fileSignerPassword" yaml:"fileSignerPassword"`
+	TinkKEKURI             string `json:"tinkKEKURI" yaml:"tinkKEKURI"`
+	TinkKeysetPath         string `json:"tinkKeysetPath" yaml:"tinkKeysetPath"`
+	GCPKMSRetries          uint   `json:"gcpkmsRetries" yaml:"gcpkmsRetries"`
+	GCPKMSTimeout          uint   `json:"gcpkmsTimeout" yaml:"gcpkmsTimeout"`
+
+	// Multiple signers for hybrid mode (takes precedence if non-empty)
+	Signers []SignerConfig `json:"signers,omitempty" yaml:"signers,omitempty"`
+}
+
+func (sc SigningConfig) IsUnset() bool {
+	if len(sc.Signers) > 0 {
+		return false
+	}
+	return sc.SigningSchemeOrKeyPath == "" && sc.FileSignerPassword == "" &&
+		sc.TinkKEKURI == "" && sc.TinkKeysetPath == ""
+}
+
+// GetSignerConfigs returns the list of signer configurations.
+// If Signers array is set, returns those. Otherwise, returns a single-element
+// slice with the legacy single-signer configuration.
+func (sc SigningConfig) GetSignerConfigs() []SignerConfig {
+	if len(sc.Signers) > 0 {
+		return sc.Signers
+	}
+	// Backwards compatible: wrap single signer config
+	return []SignerConfig{{
+		SigningSchemeOrKeyPath: sc.SigningSchemeOrKeyPath,
+		FileSignerPassword:     sc.FileSignerPassword,
+		TinkKEKURI:             sc.TinkKEKURI,
+		TinkKeysetPath:         sc.TinkKeysetPath,
+		GCPKMSRetries:          sc.GCPKMSRetries,
+		GCPKMSTimeout:          sc.GCPKMSTimeout,
+	}}
 }
 
 func New(ctx context.Context, signer, pass, tinkKEKURI, tinkKeysetPath string, gcpkmsretries, gcpkmstimeout uint) (signature.Signer, error) {
@@ -72,4 +116,29 @@ func New(ctx context.Context, signer, pass, tinkKEKURI, tinkKeysetPath string, g
 	default:
 		return NewFile(signer, pass)
 	}
+}
+
+// NewFromConfig creates a signer from a SignerConfig
+func NewFromConfig(ctx context.Context, cfg SignerConfig) (signature.Signer, error) {
+	return New(ctx, cfg.SigningSchemeOrKeyPath, cfg.FileSignerPassword,
+		cfg.TinkKEKURI, cfg.TinkKeysetPath, cfg.GCPKMSRetries, cfg.GCPKMSTimeout)
+}
+
+// NewMultipleFromConfig creates multiple signers from a SigningConfig.
+// This is used for hybrid signing mode where multiple keys sign the same content.
+func NewMultipleFromConfig(ctx context.Context, cfg SigningConfig) ([]signature.Signer, error) {
+	configs := cfg.GetSignerConfigs()
+	if len(configs) == 0 {
+		return nil, errors.New("no signer configurations provided")
+	}
+
+	signers := make([]signature.Signer, 0, len(configs))
+	for i, sc := range configs {
+		s, err := NewFromConfig(ctx, sc)
+		if err != nil {
+			return nil, fmt.Errorf("creating signer %d: %w", i, err)
+		}
+		signers = append(signers, s)
+	}
+	return signers, nil
 }

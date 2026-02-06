@@ -18,7 +18,6 @@ package sharding
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -52,13 +51,25 @@ type LogRange struct {
 	TreeLength    int64                      `json:"treeLength" yaml:"treeLength"`       // unused for active tree
 	SigningConfig signer.SigningConfig       `json:"signingConfig" yaml:"signingConfig"` // if unset, assume same as active tree
 	GRPCConfig    *trillianclient.GRPCConfig `json:"grpcEndpoint" yaml:"grpcEndpoint"`   // if unset, assume same as active tree
-	Signer        signature.Signer
-	PemPubKey     string // PEM-encoded PKIX public key
-	LogID         string // Hex-encoded SHA256 digest of PKIX-encoded public key
+
+	// Signers contains all signers for this log range (for hybrid mode)
+	Signers []signature.Signer
+	// Signer is the primary signer (first in Signers array) for backwards compatibility
+	Signer signature.Signer
+
+	// PemPubKeys contains PEM-encoded PKIX public keys for all signers
+	PemPubKeys []string
+	// PemPubKey is the primary public key (first in PemPubKeys) for backwards compatibility
+	PemPubKey string
+
+	// LogIDs contains hex-encoded SHA256 digests of PKIX-encoded public keys for all signers
+	LogIDs []string
+	// LogID is the primary log ID (first in LogIDs) for backwards compatibility
+	LogID string
 }
 
 func (l LogRange) String() string {
-	return fmt.Sprintf("{ TreeID: %v, TreeLength: %v, SigningScheme: %v, PemPubKey: %v, LogID: %v }", l.TreeID, l.TreeLength, l.SigningConfig.SigningSchemeOrKeyPath, l.PemPubKey, l.LogID)
+	return fmt.Sprintf("{ TreeID: %v, TreeLength: %v, NumSigners: %d, PemPubKey: %v, LogID: %v }", l.TreeID, l.TreeLength, len(l.Signers), l.PemPubKey, l.LogID)
 }
 
 // NewLogRanges initializes the active and any inactive log shards from a config file.
@@ -149,32 +160,41 @@ func initializeRange(ctx context.Context, r LogRange) (LogRange, error) {
 		return LogRange{}, fmt.Errorf("signing config not set, unable to initialize shard signer")
 	}
 
-	// Initialize shard signer
-	s, err := signer.New(ctx, r.SigningConfig.SigningSchemeOrKeyPath, r.SigningConfig.FileSignerPassword,
-		r.SigningConfig.TinkKEKURI, r.SigningConfig.TinkKeysetPath, r.SigningConfig.GCPKMSRetries, r.SigningConfig.GCPKMSTimeout)
+	// Initialize shard signers (supports hybrid mode with multiple signers)
+	signers, err := signer.NewMultipleFromConfig(ctx, r.SigningConfig)
 	if err != nil {
-		return LogRange{}, err
+		return LogRange{}, fmt.Errorf("creating signers: %w", err)
 	}
-	r.Signer = s
+	r.Signers = signers
+	r.Signer = signers[0] // Primary signer for backwards compatibility
 
-	// Initialize public key
-	pubKey, err := s.PublicKey(options.WithContext(ctx))
-	if err != nil {
-		return LogRange{}, err
-	}
-	pemPubKey, err := cryptoutils.MarshalPublicKeyToPEM(pubKey)
-	if err != nil {
-		return LogRange{}, err
-	}
-	r.PemPubKey = string(pemPubKey)
+	// Initialize public keys and log IDs for all signers
+	r.PemPubKeys = make([]string, len(signers))
+	r.LogIDs = make([]string, len(signers))
 
-	// Initialize log ID from public key
-	b, err := x509.MarshalPKIXPublicKey(pubKey)
-	if err != nil {
-		return LogRange{}, err
+	for i, s := range signers {
+		pubKey, err := s.PublicKey(options.WithContext(ctx))
+		if err != nil {
+			return LogRange{}, fmt.Errorf("getting public key for signer %d: %w", i, err)
+		}
+
+		pemPubKey, err := cryptoutils.MarshalPublicKeyToPEM(pubKey)
+		if err != nil {
+			return LogRange{}, fmt.Errorf("marshalling public key for signer %d: %w", i, err)
+		}
+		r.PemPubKeys[i] = string(pemPubKey)
+
+		derPubKey, err := cryptoutils.MarshalPublicKeyToDER(pubKey)
+		if err != nil {
+			return LogRange{}, fmt.Errorf("marshalling public key to DER for signer %d: %w", i, err)
+		}
+		pubkeyHashBytes := sha256.Sum256(derPubKey)
+		r.LogIDs[i] = hex.EncodeToString(pubkeyHashBytes[:])
 	}
-	pubkeyHashBytes := sha256.Sum256(b)
-	r.LogID = hex.EncodeToString(pubkeyHashBytes[:])
+
+	// Set backwards compatible single values
+	r.PemPubKey = r.PemPubKeys[0]
+	r.LogID = r.LogIDs[0]
 
 	return r, nil
 }
@@ -248,7 +268,7 @@ func (l *LogRanges) String() string {
 	return strings.Join(ranges, ",")
 }
 
-// PublicKey returns the associated public key for the given Tree ID
+// PublicKey returns the primary public key for the given Tree ID
 // and returns the active public key by default
 func (l *LogRanges) PublicKey(treeID string) (string, error) {
 	// if no tree ID is specified, assume the active tree
@@ -270,4 +290,28 @@ func (l *LogRanges) PublicKey(treeID string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("%d is not a valid tree ID and doesn't have an associated public key", tid)
+}
+
+// PublicKeys returns all public keys for the given Tree ID (for hybrid mode)
+// and returns the active public keys by default
+func (l *LogRanges) PublicKeys(treeID string) ([]string, error) {
+	// if no tree ID is specified, assume the active tree
+	if treeID == "" {
+		return l.active.PemPubKeys, nil
+	}
+	tid, err := strconv.ParseInt(treeID, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	if tid == l.GetActive().TreeID {
+		return l.active.PemPubKeys, nil
+	}
+
+	for _, i := range l.inactive {
+		if i.TreeID == tid {
+			return i.PemPubKeys, nil
+		}
+	}
+	return nil, fmt.Errorf("%d is not a valid tree ID and doesn't have associated public keys", tid)
 }

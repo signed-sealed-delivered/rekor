@@ -19,10 +19,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"os"
 	"slices"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 
 	v1 "github.com/sigstore/protobuf-specs/gen/pb-go/common/v1"
 	"github.com/sigstore/rekor/pkg/indexstorage"
@@ -90,13 +92,31 @@ func NewAPI(treeID int64) (*API, error) {
 	}
 
 	shardingConfig := viper.GetString("trillian_log_server.sharding_config")
-	signingConfig := signer.SigningConfig{
-		SigningSchemeOrKeyPath: viper.GetString("rekor_server.signer"),
-		FileSignerPassword:     viper.GetString("rekor_server.signer-passwd"),
-		TinkKEKURI:             viper.GetString("rekor_server.tink_kek_uri"),
-		TinkKeysetPath:         viper.GetString("rekor_server.tink_keyset_path"),
-		GCPKMSRetries:          viper.GetUint("rekor_server.signer.gcpkms.retries"),
-		GCPKMSTimeout:          viper.GetUint("rekor_server.signer.gcpkms.timeout"),
+
+	// Load signing configuration - either from a config file (for hybrid mode)
+	// or from individual flags (backwards compatible single signer mode)
+	var signingConfig signer.SigningConfig
+	if signersConfigPath := viper.GetString("rekor_server.signers_config"); signersConfigPath != "" {
+		// Load multi-signer config from YAML file for hybrid signing mode
+		data, err := os.ReadFile(signersConfigPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading signers config file %s: %w", signersConfigPath, err)
+		}
+		if err := yaml.Unmarshal(data, &signingConfig); err != nil {
+			return nil, fmt.Errorf("parsing signers config file %s: %w", signersConfigPath, err)
+		}
+		log.Logger.Infof("Loaded %d signers from config file %s (hybrid signing mode)",
+			len(signingConfig.Signers), signersConfigPath)
+	} else {
+		// Backwards compatible: single signer from flags
+		signingConfig = signer.SigningConfig{
+			SigningSchemeOrKeyPath: viper.GetString("rekor_server.signer"),
+			FileSignerPassword:     viper.GetString("rekor_server.signer-passwd"),
+			TinkKEKURI:             viper.GetString("rekor_server.tink_kek_uri"),
+			TinkKeysetPath:         viper.GetString("rekor_server.tink_keyset_path"),
+			GCPKMSRetries:          viper.GetUint("rekor_server.signer.gcpkms.retries"),
+			GCPKMSTimeout:          viper.GetUint("rekor_server.signer.gcpkms.timeout"),
+		}
 	}
 	ranges, err := sharding.NewLogRanges(ctx, shardingConfig, treeID, signingConfig)
 	if err != nil {
@@ -150,7 +170,8 @@ func NewAPI(treeID int64) (*API, error) {
 		if !ok {
 			return nil, fmt.Errorf("no root found for inactive shard %d", r.TreeID)
 		}
-		cp, err := util.CreateAndSignCheckpoint(ctx, viper.GetString("rekor_server.hostname"), r.TreeID, uint64(r.TreeLength), root.RootHash, r.Signer) //nolint:gosec
+		// Use multiple signers for hybrid mode support
+		cp, err := util.CreateAndSignCheckpointMultiple(ctx, viper.GetString("rekor_server.hostname"), r.TreeID, uint64(r.TreeLength), root.RootHash, r.Signers) //nolint:gosec
 		if err != nil {
 			return nil, fmt.Errorf("error signing checkpoint for inactive shard %d: %w", r.TreeID, err)
 		}

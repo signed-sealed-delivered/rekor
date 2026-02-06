@@ -344,6 +344,43 @@ func init() {
           }
         }
       }
+    },
+    "/api/v1/log/publicKeys": {
+      "get": {
+        "description": "Returns all public keys for hybrid signing mode. In single-signer mode, returns an array with one key.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pubkey"
+        ],
+        "summary": "Retrieve all public keys that can be used to validate the signed tree head",
+        "operationId": "getPublicKeys",
+        "parameters": [
+          {
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "description": "The tree ID of the tree you wish to get public keys for",
+            "name": "treeID",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The public keys",
+            "schema": {
+              "type": "array",
+              "items": {
+                "description": "PEM-encoded public key",
+                "type": "string"
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/responses/InternalServerError"
+          }
+        }
+      }
     }
   },
   "definitions": {
@@ -1300,6 +1337,46 @@ func init() {
             "description": "The public key",
             "schema": {
               "type": "string"
+            }
+          },
+          "default": {
+            "description": "There was an internal error in the server while processing the request",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/log/publicKeys": {
+      "get": {
+        "description": "Returns all public keys for hybrid signing mode. In single-signer mode, returns an array with one key.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pubkey"
+        ],
+        "summary": "Retrieve all public keys that can be used to validate the signed tree head",
+        "operationId": "getPublicKeys",
+        "parameters": [
+          {
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "description": "The tree ID of the tree you wish to get public keys for",
+            "name": "treeID",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The public keys",
+            "schema": {
+              "type": "array",
+              "items": {
+                "description": "PEM-encoded public key",
+                "type": "string"
+              }
             }
           },
           "default": {

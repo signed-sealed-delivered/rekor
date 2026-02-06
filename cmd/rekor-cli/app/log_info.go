@@ -18,8 +18,6 @@ package app
 import (
 	"context"
 	"crypto"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 
@@ -38,6 +36,7 @@ import (
 	"github.com/sigstore/rekor/pkg/generated/client/tlog"
 	"github.com/sigstore/rekor/pkg/log"
 	"github.com/sigstore/rekor/pkg/util"
+	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"github.com/sigstore/sigstore/pkg/signature"
 )
 
@@ -172,14 +171,9 @@ func loadVerifier(ctx context.Context, rekorClient *rclient.Rekor, treeID string
 		publicKey = keyResp.Payload
 	}
 
-	block, _ := pem.Decode([]byte(publicKey))
-	if block == nil {
-		return nil, errors.New("failed to decode public key of server")
-	}
-
-	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	pub, err := cryptoutils.UnmarshalPEMToPublicKey([]byte(publicKey))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode public key of server: %w", err)
 	}
 
 	return signature.LoadVerifier(pub, crypto.SHA256)
