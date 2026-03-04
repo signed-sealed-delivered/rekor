@@ -501,6 +501,22 @@ definitions:
                 # 2. Canonicalize the remaining JSON document by following RFC 8785 rules
                 # 3. Verify the canonicalized payload and signedEntryTimestamp against rekor's public key
               description: Signature over the logID, logIndex, body and integratedTime.
+            additionalSignedEntryTimestamps:
+              type: array
+              items:
+                type: object
+                properties:
+                  logID:
+                    type: string
+                    description: The hex-encoded SHA256 hash of the DER-encoded public key of the log that produced this SET.
+                  signedEntryTimestamp:
+                    type: string
+                    format: byte
+                    description: The signed entry timestamp bytes.
+                required:
+                  - logID
+                  - signedEntryTimestamp
+              description: Additional signed entry timestamps paired with the logID of the signer, from hybrid-mode transparency logs.
       required:
         - "logID"
         - "logIndex"

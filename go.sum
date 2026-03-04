@@ -447,8 +447,6 @@ github.com/secure-systems-lab/go-securesystemslib v0.9.1 h1:nZZaNz4DiERIQguNy0cL
 github.com/secure-systems-lab/go-securesystemslib v0.9.1/go.mod h1:np53YzT0zXGMv6x4iEWc9Z59uR+x+ndLwCLqPYpLXVU=
 github.com/shibumi/go-pathspec v1.3.0 h1:QUyMZhFo0Md5B8zV8x2tesohbb5kfbpTi9rBnKh5dkI=
 github.com/shibumi/go-pathspec v1.3.0/go.mod h1:Xutfslp817l2I1cZvgcfeMQJG5QnU2lh5tVaaMCl3jE=
-github.com/sigstore/protobuf-specs v0.5.0 h1:F8YTI65xOHw70NrvPwJ5PhAzsvTnuJMGLkA4FIkofAY=
-github.com/sigstore/protobuf-specs v0.5.0/go.mod h1:+gXR+38nIa2oEupqDdzg4qSBT0Os+sP7oYv6alWewWc=
 github.com/sigstore/sigstore/pkg/signature/kms/aws v1.9.5 h1:qp2VFyKuFQvTGmZwk5Q7m5nE4NwnF9tHwkyz0gtWAck=
 github.com/sigstore/sigstore/pkg/signature/kms/aws v1.9.5/go.mod h1:DKlQjjr+GsWljEYPycI0Sf8URLCk4EbGA9qYjF47j4g=
 github.com/sigstore/sigstore/pkg/signature/kms/azure v1.9.5 h1:CRZcdYn5AOptStsLRAAACudAVmb1qUbhMlzrvm7ju3o=
@@ -540,8 +538,6 @@ go.opentelemetry.io/otel/sdk/metric v1.38.0 h1:aSH66iL0aZqo//xXzQLYozmWrXxyFkBJ6
 go.opentelemetry.io/otel/sdk/metric v1.38.0/go.mod h1:dg9PBnW9XdQ1Hd6ZnRz689CbtrUp0wMMs9iPcgT9EZA=
 go.opentelemetry.io/otel/trace v1.38.0 h1:Fxk5bKrDZJUH+AMyyIXGcFAPah0oRcT+LuNtJrmcNLE=
 go.opentelemetry.io/otel/trace v1.38.0/go.mod h1:j1P9ivuFsTceSWe1oY+EeW3sc+Pp42sO++GHkg4wwhs=
-go.step.sm/crypto v0.74.0 h1:/APBEv45yYR4qQFg47HA8w1nesIGcxh44pGyQNw6JRA=
-go.step.sm/crypto v0.74.0/go.mod h1:UoXqCAJjjRgzPte0Llaqen7O9P7XjPmgjgTHQGkKCDk=
 go.uber.org/atomic v1.7.0/go.mod h1:fEN4uk6kAWBTFdckzkM89CLk9XfWZrxpCo0nPH17wJc=
 go.uber.org/goleak v1.1.10/go.mod h1:8a7PlsEVH3e/a/GLqe5IIrQx6GzcnRmZEufDUTk4A7A=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=

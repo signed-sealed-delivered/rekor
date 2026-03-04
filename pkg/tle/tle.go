@@ -85,7 +85,8 @@ func GenerateTransparencyLogEntry(anon models.LogEntryAnon) (*rekor_pb.Transpare
 		},
 		IntegratedTime: *anon.IntegratedTime,
 		InclusionPromise: &rekor_pb.InclusionPromise{
-			SignedEntryTimestamp: anon.Verification.SignedEntryTimestamp,
+			SignedEntryTimestamp:             anon.Verification.SignedEntryTimestamp,
+			AdditionalSignedEntryTimestamps: toAdditionalSETs(anon.Verification.AdditionalSignedEntryTimestamps),
 		},
 		InclusionProof: &rekor_pb.InclusionProof{
 			LogIndex: *anon.Verification.InclusionProof.LogIndex, // relative to the specific tree the entry is found in
@@ -98,6 +99,23 @@ func GenerateTransparencyLogEntry(anon models.LogEntryAnon) (*rekor_pb.Transpare
 		},
 		CanonicalizedBody: body, // we don't call eimpl.Canonicalize in the case that the logic is different in this caller vs when it was persisted in the log
 	}, nil
+}
+
+func toAdditionalSETs(in []*models.LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0) []*rekor_pb.AdditionalSignedEntryTimestamp {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*rekor_pb.AdditionalSignedEntryTimestamp, len(in))
+	for i, v := range in {
+		logIDHash, _ := hex.DecodeString(*v.LogID)
+		out[i] = &rekor_pb.AdditionalSignedEntryTimestamp{
+			LogId: &rekor_pb_common.LogId{
+				KeyId: logIDHash,
+			},
+			SignedEntryTimestamp: []byte(*v.SignedEntryTimestamp),
+		}
+	}
+	return out
 }
 
 // MarshalTLEToJSON marshals a TransparencyLogEntry message to JSON according to the protobuf JSON encoding rules

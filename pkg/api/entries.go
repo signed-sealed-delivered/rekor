@@ -66,30 +66,33 @@ const (
 )
 
 // signEntryMultiple signs an entry with multiple signers (for hybrid mode).
-// Returns all signatures; the first one is the primary for backwards compatibility.
-func signEntryMultiple(ctx context.Context, signers []signature.Signer, entry models.LogEntryAnon) ([][]byte, error) {
+// Returns all signatures paired with their logIDs; the first one is the primary for backwards compatibility.
+func signEntryMultiple(ctx context.Context, signers []signature.Signer, logIDs []string, entry models.LogEntryAnon) ([][]byte, []string, error) {
 	if len(signers) == 0 {
-		return nil, fmt.Errorf("no signers provided")
+		return nil, nil, fmt.Errorf("no signers provided")
+	}
+	if len(signers) != len(logIDs) {
+		return nil, nil, fmt.Errorf("signers and logIDs length mismatch: %d vs %d", len(signers), len(logIDs))
 	}
 
 	payload, err := entry.MarshalBinary()
 	if err != nil {
-		return nil, fmt.Errorf("marshalling error: %w", err)
+		return nil, nil, fmt.Errorf("marshalling error: %w", err)
 	}
 	canonicalized, err := jsoncanonicalizer.Transform(payload)
 	if err != nil {
-		return nil, fmt.Errorf("canonicalizing error: %w", err)
+		return nil, nil, fmt.Errorf("canonicalizing error: %w", err)
 	}
 
 	signatures := make([][]byte, len(signers))
 	for i, signer := range signers {
 		sig, err := signer.SignMessage(bytes.NewReader(canonicalized), options.WithContext(ctx))
 		if err != nil {
-			return nil, fmt.Errorf("signing error for signer %d: %w", i, err)
+			return nil, nil, fmt.Errorf("signing error for signer %d: %w", i, err)
 		}
 		signatures[i] = sig
 	}
-	return signatures, nil
+	return signatures, logIDs, nil
 }
 
 // logEntryFromLeaf creates a signed LogEntry struct from trillian structs
@@ -120,7 +123,7 @@ func logEntryFromLeaf(ctx context.Context, leaf *trillian.LogLeaf, signedLogRoot
 	}
 
 	// Sign with all signers (hybrid mode support)
-	signatures, err := signEntryMultiple(ctx, logRange.Signers, logEntryAnon)
+	signatures, sigLogIDs, err := signEntryMultiple(ctx, logRange.Signers, logRange.LogIDs, logEntryAnon)
 	if err != nil {
 		return nil, fmt.Errorf("signing entry error: %w", err)
 	}
@@ -193,10 +196,23 @@ func logEntryFromLeaf(ctx context.Context, leaf *trillian.LogLeaf, signedLogRoot
 		}
 	}
 
-	logEntryAnon.Verification = &models.LogEntryAnonVerification{
+	verification := &models.LogEntryAnonVerification{
 		InclusionProof:       &inclusionProof,
 		SignedEntryTimestamp: strfmt.Base64(primarySignature),
 	}
+	if len(signatures) > 1 {
+		for i, sig := range signatures[1:] {
+			logID := sigLogIDs[i+1]
+			sigBytes := strfmt.Base64(sig)
+			verification.AdditionalSignedEntryTimestamps = append(
+				verification.AdditionalSignedEntryTimestamps,
+				&models.LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0{
+					LogID:                &logID,
+					SignedEntryTimestamp: &sigBytes,
+				})
+		}
+	}
+	logEntryAnon.Verification = verification
 
 	return models.LogEntry{
 		entryID: logEntryAnon}, nil
@@ -444,7 +460,7 @@ func createLogEntry(params entries.CreateLogEntryParams) (models.LogEntry, middl
 
 	// Sign with all signers (hybrid mode support)
 	activeRange := api.logRanges.GetActive()
-	signatures, err := signEntryMultiple(ctx, activeRange.Signers, logEntryAnon)
+	signatures, sigLogIDs, err := signEntryMultiple(ctx, activeRange.Signers, activeRange.LogIDs, logEntryAnon)
 	if err != nil {
 		return nil, handleRekorAPIError(params, http.StatusInternalServerError, fmt.Errorf("signing entry error: %w", err), signingError)
 	}
@@ -474,10 +490,23 @@ func createLogEntry(params entries.CreateLogEntryParams) (models.LogEntry, middl
 		Checkpoint: conv.Pointer(string(scBytes)),
 	}
 
-	logEntryAnon.Verification = &models.LogEntryAnonVerification{
+	verification := &models.LogEntryAnonVerification{
 		InclusionProof:       &inclusionProof,
 		SignedEntryTimestamp: strfmt.Base64(primarySignature),
 	}
+	if len(signatures) > 1 {
+		for i, sig := range signatures[1:] {
+			logID := sigLogIDs[i+1]
+			sigBytes := strfmt.Base64(sig)
+			verification.AdditionalSignedEntryTimestamps = append(
+				verification.AdditionalSignedEntryTimestamps,
+				&models.LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0{
+					LogID:                &logID,
+					SignedEntryTimestamp: &sigBytes,
+				})
+		}
+	}
+	logEntryAnon.Verification = verification
 
 	logEntry := models.LogEntry{
 		entryID: logEntryAnon,

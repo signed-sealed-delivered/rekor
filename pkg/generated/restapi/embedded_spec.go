@@ -527,6 +527,28 @@ func init() {
           "verification": {
             "type": "object",
             "properties": {
+              "additionalSignedEntryTimestamps": {
+                "description": "Additional signed entry timestamps paired with the logID of the signer, from hybrid-mode transparency logs.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "logID",
+                    "signedEntryTimestamp"
+                  ],
+                  "properties": {
+                    "logID": {
+                      "description": "The hex-encoded SHA256 hash of the DER-encoded public key of the log that produced this SET.",
+                      "type": "string"
+                    },
+                    "signedEntryTimestamp": {
+                      "description": "The signed entry timestamp bytes.",
+                      "type": "string",
+                      "format": "byte"
+                    }
+                  }
+                }
+              },
               "inclusionProof": {
                 "$ref": "#/definitions/InclusionProof"
               },
@@ -2452,6 +2474,13 @@ func init() {
         "verification": {
           "type": "object",
           "properties": {
+            "additionalSignedEntryTimestamps": {
+              "description": "Additional signed entry timestamps paired with the logID of the signer, from hybrid-mode transparency logs.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0"
+              }
+            },
             "inclusionProof": {
               "$ref": "#/definitions/InclusionProof"
             },
@@ -2476,11 +2505,36 @@ func init() {
     "LogEntryAnonVerification": {
       "type": "object",
       "properties": {
+        "additionalSignedEntryTimestamps": {
+          "description": "Additional signed entry timestamps paired with the logID of the signer, from hybrid-mode transparency logs.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0"
+          }
+        },
         "inclusionProof": {
           "$ref": "#/definitions/InclusionProof"
         },
         "signedEntryTimestamp": {
           "description": "Signature over the logID, logIndex, body and integratedTime.",
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0": {
+      "type": "object",
+      "required": [
+        "logID",
+        "signedEntryTimestamp"
+      ],
+      "properties": {
+        "logID": {
+          "description": "The hex-encoded SHA256 hash of the DER-encoded public key of the log that produced this SET.",
+          "type": "string"
+        },
+        "signedEntryTimestamp": {
+          "description": "The signed entry timestamp bytes.",
           "type": "string",
           "format": "byte"
         }

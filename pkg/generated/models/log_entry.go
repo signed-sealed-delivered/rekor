@@ -24,6 +24,7 @@ package models
 import (
 	"context"
 	stderrors "errors"
+	"strconv"
 
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
@@ -371,6 +372,9 @@ func (m *LogEntryAnonAttestation) UnmarshalBinary(b []byte) error {
 // swagger:model LogEntryAnonVerification
 type LogEntryAnonVerification struct {
 
+	// Additional signed entry timestamps paired with the logID of the signer, from hybrid-mode transparency logs.
+	AdditionalSignedEntryTimestamps []*LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0 `json:"additionalSignedEntryTimestamps"`
+
 	// inclusion proof
 	InclusionProof *InclusionProof `json:"inclusionProof,omitempty"`
 
@@ -383,6 +387,10 @@ type LogEntryAnonVerification struct {
 func (m *LogEntryAnonVerification) Validate(formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.validateAdditionalSignedEntryTimestamps(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validateInclusionProof(formats); err != nil {
 		res = append(res, err)
 	}
@@ -390,6 +398,36 @@ func (m *LogEntryAnonVerification) Validate(formats strfmt.Registry) error {
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *LogEntryAnonVerification) validateAdditionalSignedEntryTimestamps(formats strfmt.Registry) error {
+	if swag.IsZero(m.AdditionalSignedEntryTimestamps) { // not required
+		return nil
+	}
+
+	for i := 0; i < len(m.AdditionalSignedEntryTimestamps); i++ {
+		if swag.IsZero(m.AdditionalSignedEntryTimestamps[i]) { // not required
+			continue
+		}
+
+		if m.AdditionalSignedEntryTimestamps[i] != nil {
+			if err := m.AdditionalSignedEntryTimestamps[i].Validate(formats); err != nil {
+				ve := new(errors.Validation)
+				if stderrors.As(err, &ve) {
+					return ve.ValidateName("verification" + "." + "additionalSignedEntryTimestamps" + "." + strconv.Itoa(i))
+				}
+				ce := new(errors.CompositeError)
+				if stderrors.As(err, &ce) {
+					return ce.ValidateName("verification" + "." + "additionalSignedEntryTimestamps" + "." + strconv.Itoa(i))
+				}
+
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }
 
@@ -420,6 +458,10 @@ func (m *LogEntryAnonVerification) validateInclusionProof(formats strfmt.Registr
 func (m *LogEntryAnonVerification) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.contextValidateAdditionalSignedEntryTimestamps(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.contextValidateInclusionProof(ctx, formats); err != nil {
 		res = append(res, err)
 	}
@@ -427,6 +469,35 @@ func (m *LogEntryAnonVerification) ContextValidate(ctx context.Context, formats 
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *LogEntryAnonVerification) contextValidateAdditionalSignedEntryTimestamps(ctx context.Context, formats strfmt.Registry) error {
+
+	for i := 0; i < len(m.AdditionalSignedEntryTimestamps); i++ {
+
+		if m.AdditionalSignedEntryTimestamps[i] != nil {
+
+			if swag.IsZero(m.AdditionalSignedEntryTimestamps[i]) { // not required
+				return nil
+			}
+
+			if err := m.AdditionalSignedEntryTimestamps[i].ContextValidate(ctx, formats); err != nil {
+				ve := new(errors.Validation)
+				if stderrors.As(err, &ve) {
+					return ve.ValidateName("verification" + "." + "additionalSignedEntryTimestamps" + "." + strconv.Itoa(i))
+				}
+				ce := new(errors.CompositeError)
+				if stderrors.As(err, &ce) {
+					return ce.ValidateName("verification" + "." + "additionalSignedEntryTimestamps" + "." + strconv.Itoa(i))
+				}
+
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }
 
@@ -466,6 +537,80 @@ func (m *LogEntryAnonVerification) MarshalBinary() ([]byte, error) {
 // UnmarshalBinary interface implementation
 func (m *LogEntryAnonVerification) UnmarshalBinary(b []byte) error {
 	var res LogEntryAnonVerification
+	if err := swag.ReadJSON(b, &res); err != nil {
+		return err
+	}
+	*m = res
+	return nil
+}
+
+// LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0 log entry anon verification additional signed entry timestamps items0
+//
+// swagger:model LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0
+type LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0 struct {
+
+	// The hex-encoded SHA256 hash of the DER-encoded public key of the log that produced this SET.
+	// Required: true
+	LogID *string `json:"logID"`
+
+	// The signed entry timestamp bytes.
+	// Required: true
+	// Format: byte
+	SignedEntryTimestamp *strfmt.Base64 `json:"signedEntryTimestamp"`
+}
+
+// Validate validates this log entry anon verification additional signed entry timestamps items0
+func (m *LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0) Validate(formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.validateLogID(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateSignedEntryTimestamp(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
+	return nil
+}
+
+func (m *LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0) validateLogID(formats strfmt.Registry) error {
+
+	if err := validate.Required("logID", "body", m.LogID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0) validateSignedEntryTimestamp(formats strfmt.Registry) error {
+
+	if err := validate.Required("signedEntryTimestamp", "body", m.SignedEntryTimestamp); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ContextValidate validates this log entry anon verification additional signed entry timestamps items0 based on context it is used
+func (m *LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
+	return nil
+}
+
+// MarshalBinary interface implementation
+func (m *LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0) MarshalBinary() ([]byte, error) {
+	if m == nil {
+		return nil, nil
+	}
+	return swag.WriteJSON(m)
+}
+
+// UnmarshalBinary interface implementation
+func (m *LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0) UnmarshalBinary(b []byte) error {
+	var res LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0
 	if err := swag.ReadJSON(b, &res); err != nil {
 		return err
 	}
