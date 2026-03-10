@@ -18,17 +18,23 @@ ENV APP_ROOT=/opt/app-root
 ENV GOPATH=$APP_ROOT
 
 WORKDIR $APP_ROOT/src/
-ADD go.mod go.sum $APP_ROOT/src/
+
+# Copy sibling directories referenced in go.mod replace directives
+COPY protobuf-specs $APP_ROOT/protobuf-specs/
+COPY sigstore $APP_ROOT/sigstore/
+
+ADD rekor/go.mod rekor/go.sum $APP_ROOT/src/
 RUN go mod download
 
 # Add source code
-ADD ./cmd/ $APP_ROOT/src/cmd/
-ADD ./pkg/ $APP_ROOT/src/pkg/
+ADD rekor/cmd/ $APP_ROOT/src/cmd/
+ADD rekor/pkg/ $APP_ROOT/src/pkg/
 
 ARG SERVER_LDFLAGS
-RUN go build -ldflags "${SERVER_LDFLAGS}" ./cmd/rekor-server
-RUN CGO_ENABLED=0 go build -gcflags "all=-N -l" -ldflags "${SERVER_LDFLAGS}" -o rekor-server_debug ./cmd/rekor-server
-RUN go test -c -ldflags "${SERVER_LDFLAGS}" -cover -covermode=count -coverpkg=./... -o rekor-server_test ./cmd/rekor-server
+# pq_circl enables post-quantum (ML-DSA) cryptography support
+RUN go build -tags "pq_circl" -ldflags "${SERVER_LDFLAGS}" -o rekor-server ./cmd/rekor-server
+RUN CGO_ENABLED=0 go build -tags "pq_circl" -gcflags "all=-N -l" -ldflags "${SERVER_LDFLAGS}" -o rekor-server_debug ./cmd/rekor-server
+RUN go test -c -tags "pq_circl" -ldflags "${SERVER_LDFLAGS}" -cover -covermode=count -coverpkg=./... -o rekor-server_test ./cmd/rekor-server
 
 # Multi-Stage production build
 FROM golang:1.25.4@sha256:e68f6a00e88586577fafa4d9cefad1349c2be70d21244321321c407474ff9bf2 AS deploy
@@ -37,7 +43,8 @@ FROM golang:1.25.4@sha256:e68f6a00e88586577fafa4d9cefad1349c2be70d21244321321c40
 COPY --from=builder /opt/app-root/src/rekor-server /usr/local/bin/rekor-server
 
 # Set the binary as the entrypoint of the container
-CMD ["rekor-server", "serve"]
+ENTRYPOINT ["/usr/local/bin/rekor-server"]
+CMD ["serve"]
 
 # debug compile options & debugger
 FROM deploy AS debug
