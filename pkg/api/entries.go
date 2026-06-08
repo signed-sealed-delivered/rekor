@@ -163,34 +163,42 @@ func logEntryFromLeaf(ctx context.Context, leaf *trillian.LogLeaf, signedLogRoot
 	if viper.GetBool("enable_attestation_storage") {
 		pe, err := models.UnmarshalProposedEntry(bytes.NewReader(leaf.LeafValue), runtime.JSONConsumer())
 		if err != nil {
-			return nil, err
+			// Binary entry types (e.g. rhmtcmonitoring) store raw bytes, not JSON.
+			// They cannot have attestations; skip the attestation block.
+			log.ContextLogger(ctx).Debugf("skipping attestation lookup for non-JSON entry at index %d: %v", leaf.GetLeafIndex(), err)
+			pe = nil
 		}
-		eimpl, err := types.UnmarshalEntry(pe)
-		if err != nil {
-			return nil, err
+		var eimpl types.EntryImpl
+		if pe != nil {
+			eimpl, err = types.UnmarshalEntry(pe)
+			if err != nil {
+				return nil, err
+			}
 		}
 
-		if entryWithAtt, ok := eimpl.(types.EntryWithAttestationImpl); ok {
-			var att []byte
-			var fetchErr error
-			attKey := entryWithAtt.AttestationKey()
-			// if we're given a key by the type logic, let's try that first
-			if attKey != "" {
-				att, fetchErr = attestationStorageClient.FetchAttestation(ctx, attKey)
-				if fetchErr != nil {
-					log.ContextLogger(ctx).Debugf("error fetching attestation by key, trying by UUID: %s %v", attKey, fetchErr)
+		if eimpl != nil {
+			if entryWithAtt, ok := eimpl.(types.EntryWithAttestationImpl); ok {
+				var att []byte
+				var fetchErr error
+				attKey := entryWithAtt.AttestationKey()
+				// if we're given a key by the type logic, let's try that first
+				if attKey != "" {
+					att, fetchErr = attestationStorageClient.FetchAttestation(ctx, attKey)
+					if fetchErr != nil {
+						log.ContextLogger(ctx).Debugf("error fetching attestation by key, trying by UUID: %s %v", attKey, fetchErr)
+					}
 				}
-			}
-			// if looking up by key failed or we weren't able to generate a key, try looking up by uuid
-			if attKey == "" || fetchErr != nil {
-				att, fetchErr = attestationStorageClient.FetchAttestation(ctx, entryIDstruct.UUID)
-				if fetchErr != nil {
-					log.ContextLogger(ctx).Debugf("error fetching attestation by uuid: %s %v", entryIDstruct.UUID, fetchErr)
+				// if looking up by key failed or we weren't able to generate a key, try looking up by uuid
+				if attKey == "" || fetchErr != nil {
+					att, fetchErr = attestationStorageClient.FetchAttestation(ctx, entryIDstruct.UUID)
+					if fetchErr != nil {
+						log.ContextLogger(ctx).Debugf("error fetching attestation by uuid: %s %v", entryIDstruct.UUID, fetchErr)
+					}
 				}
-			}
-			if fetchErr == nil {
-				logEntryAnon.Attestation = &models.LogEntryAnonAttestation{
-					Data: att,
+				if fetchErr == nil {
+					logEntryAnon.Attestation = &models.LogEntryAnonAttestation{
+						Data: att,
+					}
 				}
 			}
 		}
@@ -259,11 +267,7 @@ func getPublicKey(identity identity.Identity) (crypto.PublicKey, error) {
 	switch identityCrypto := identity.Crypto.(type) {
 	case *x509.Certificate:
 		return identityCrypto.PublicKey, nil
-	case *rsa.PublicKey:
-		return identityCrypto, nil
-	case *ecdsa.PublicKey:
-		return identityCrypto, nil
-	case ed25519.PublicKey:
+	case crypto.PublicKey:
 		return identityCrypto, nil
 	default:
 		return nil, fmt.Errorf("unsupported public key type: %T", identityCrypto)

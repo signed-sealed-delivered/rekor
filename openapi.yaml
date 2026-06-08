@@ -463,6 +463,40 @@ definitions:
         - spec
       additionalProperties: false
 
+  rhmtcmonitoring:
+    type: object
+    description: RH MTC monitoring entry. Stores a serialized batch of TBSCertificateLogEntry records in a defined binary format that monitors parse to extract identity data and verify batch integrity.
+    allOf:
+    - $ref: '#/definitions/ProposedEntry'
+    - properties:
+        apiVersion:
+          type: string
+          pattern: ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$
+        spec:
+          type: object
+          $ref: 'pkg/types/rhmtcmonitoring/rhmtcmonitoring_schema.json'
+      required:
+        - apiVersion
+        - spec
+      additionalProperties: false
+
+  rhmtccommitment:
+    type: object
+    description: RH MTC commitment entry. Small, client-verifiable entry whose body can be reconstructed from bundle fields, enabling independent leaf hash verification and SET validation.
+    allOf:
+    - $ref: '#/definitions/ProposedEntry'
+    - properties:
+        apiVersion:
+          type: string
+          pattern: ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$
+        spec:
+          type: object
+          $ref: 'pkg/types/rhmtccommitment/rhmtccommitment_schema.json'
+      required:
+        - apiVersion
+        - spec
+      additionalProperties: false
+
   LogEntry:
     type: object
     additionalProperties:

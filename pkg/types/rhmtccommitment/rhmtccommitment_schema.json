@@ -1,0 +1,12 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "http://rekor.sigstore.dev/types/rhmtccommitment/rhmtccommitment_schema.json",
+    "title": "Rhmtccommitment Schema",
+    "description": "Schema for RH MTC commitment entry objects",
+    "type": "object",
+    "oneOf": [
+        {
+            "$ref": "v0.0.1/rhmtccommitment_v0_0_1_schema.json"
+        }
+    ]
+}

@@ -51,6 +51,10 @@ import (
 	rekord_v001 "github.com/sigstore/rekor/pkg/types/rekord/v0.0.1"
 	"github.com/sigstore/rekor/pkg/types/rfc3161"
 	rfc3161_v001 "github.com/sigstore/rekor/pkg/types/rfc3161/v0.0.1"
+	rhmtccommitment "github.com/sigstore/rekor/pkg/types/rhmtccommitment"
+	rhmtccommitment_v001 "github.com/sigstore/rekor/pkg/types/rhmtccommitment/v0.0.1"
+	rhmtcmonitoring "github.com/sigstore/rekor/pkg/types/rhmtcmonitoring"
+	rhmtcmonitoring_v001 "github.com/sigstore/rekor/pkg/types/rhmtcmonitoring/v0.0.1"
 	"github.com/sigstore/rekor/pkg/types/rpm"
 	rpm_v001 "github.com/sigstore/rekor/pkg/types/rpm/v0.0.1"
 	"github.com/sigstore/rekor/pkg/types/tuf"
@@ -116,6 +120,8 @@ var serveCmd = &cobra.Command{
 			tuf.KIND:          {tuf_v001.APIVERSION},
 			hashedrekord.KIND: {hashedrekord_v001.APIVERSION},
 			dsse.KIND:         {dsse_v001.APIVERSION},
+			rhmtcmonitoring.KIND:  {rhmtcmonitoring_v001.APIVERSION},
+			rhmtccommitment.KIND:  {rhmtccommitment_v001.APIVERSION},
 		}
 		for k, v := range pluggableTypeMap {
 			log.Logger.Infof("Loading support for pluggable type '%v'", k)

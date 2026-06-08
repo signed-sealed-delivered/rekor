@@ -58,17 +58,7 @@ func (api *API) ActiveTreeID() int64 {
 	return api.logRanges.GetActive().TreeID
 }
 
-var AllowedClientSigningAlgorithms = []v1.PublicKeyDetails{
-	v1.PublicKeyDetails_PKIX_RSA_PKCS1V15_2048_SHA256,
-	v1.PublicKeyDetails_PKIX_RSA_PKCS1V15_3072_SHA256,
-	v1.PublicKeyDetails_PKIX_RSA_PKCS1V15_4096_SHA256,
-	v1.PublicKeyDetails_PKIX_ECDSA_P256_SHA_256,
-	v1.PublicKeyDetails_PKIX_ECDSA_P384_SHA_384,
-	v1.PublicKeyDetails_PKIX_ECDSA_P521_SHA_512,
-	v1.PublicKeyDetails_PKIX_ED25519,
-	v1.PublicKeyDetails_PKIX_ED25519_PH,
-}
-var DefaultClientSigningAlgorithms = AllowedClientSigningAlgorithms
+var AllowedClientSigningAlgorithms = signature.SupportedSignatureAlgorithms()
 
 func NewAPI(treeID int64) (*API, error) {
 	ctx := context.Background()
@@ -141,7 +131,7 @@ func NewAPI(treeID int64) (*API, error) {
 	algorithmsOption := viper.GetStringSlice("client-signing-algorithms")
 	var algorithms []v1.PublicKeyDetails
 	if len(algorithmsOption) == 0 {
-		algorithms = DefaultClientSigningAlgorithms
+		algorithms = AllowedClientSigningAlgorithms
 	} else {
 		for _, a := range algorithmsOption {
 			algorithm, err := signature.ParseSignatureAlgorithmFlag(a)

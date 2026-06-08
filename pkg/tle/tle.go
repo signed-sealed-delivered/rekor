@@ -85,7 +85,7 @@ func GenerateTransparencyLogEntry(anon models.LogEntryAnon) (*rekor_pb.Transpare
 		},
 		IntegratedTime: *anon.IntegratedTime,
 		InclusionPromise: &rekor_pb.InclusionPromise{
-			SignedEntryTimestamp:             anon.Verification.SignedEntryTimestamp,
+			SignedEntryTimestamp:            anon.Verification.SignedEntryTimestamp,
 			AdditionalSignedEntryTimestamps: toAdditionalSETs(anon.Verification.AdditionalSignedEntryTimestamps),
 		},
 		InclusionProof: &rekor_pb.InclusionProof{

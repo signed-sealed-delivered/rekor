@@ -27,9 +27,9 @@ import (
 	rekor_pb_common "github.com/sigstore/protobuf-specs/gen/pb-go/common/v1"
 	rekor_pb "github.com/sigstore/protobuf-specs/gen/pb-go/rekor/v1"
 	"github.com/sigstore/rekor/pkg/generated/models"
+	_ "github.com/sigstore/rekor/pkg/types/hashedrekord/v0.0.1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	_ "github.com/sigstore/rekor/pkg/types/hashedrekord/v0.0.1"
 )
 
 func TestGenerateTransparencyLogEntry(t *testing.T) {
@@ -333,11 +333,11 @@ func TestGenerateTransparencyLogEntry_AdditionalSETs(t *testing.T) {
 			SignedEntryTimestamp: strfmt.Base64("primary-set"),
 			AdditionalSignedEntryTimestamps: []*models.LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0{
 				{
-					LogID:               conv.Pointer("aabbccdd"),
+					LogID:                conv.Pointer("aabbccdd"),
 					SignedEntryTimestamp: (*strfmt.Base64)(conv.Pointer(strfmt.Base64("additional-set-1"))),
 				},
 				{
-					LogID:               conv.Pointer("eeff0011"),
+					LogID:                conv.Pointer("eeff0011"),
 					SignedEntryTimestamp: (*strfmt.Base64)(conv.Pointer(strfmt.Base64("additional-set-2"))),
 				},
 			},

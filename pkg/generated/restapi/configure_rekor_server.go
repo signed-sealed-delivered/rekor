@@ -258,6 +258,14 @@ func (l *logFormatter) NewLogEntry(r *http.Request) middleware.LogEntry {
 // The middleware configuration happens before anything, this middleware also applies to serving the swagger.json document.
 // So this is a good place to plug in a panic handling middleware, logging and metrics
 func setupGlobalMiddleware(handler http.Handler) http.Handler {
+	// Intercept RH-specific routes before the swagger handler.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rh/v1/log/monitoring", pkgapi.AddRhmtcMonitoringEntry)
+	mux.HandleFunc("/rh/v1/log/commitment", pkgapi.AddRhmtcCommitmentEntry)
+	mux.HandleFunc("/rh/v1/keys", pkgapi.GetRhKeys)
+	mux.Handle("/", handler)
+	handler = mux
+
 	returnHandler := recoverer(handler)
 	maxReqBodySize := viper.GetInt64("max_request_body_size")
 	if maxReqBodySize > 0 {

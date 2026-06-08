@@ -920,6 +920,58 @@ func init() {
         }
       ]
     },
+    "rhmtccommitment": {
+      "description": "RH MTC commitment entry. Small, client-verifiable entry whose body can be reconstructed from bundle fields, enabling independent leaf hash verification and SET validation.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/ProposedEntry"
+        },
+        {
+          "required": [
+            "apiVersion",
+            "spec"
+          ],
+          "properties": {
+            "apiVersion": {
+              "type": "string",
+              "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+            },
+            "spec": {
+              "type": "object",
+              "$ref": "pkg/types/rhmtccommitment/rhmtccommitment_schema.json"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "rhmtcmonitoring": {
+      "description": "RH MTC monitoring entry. Stores a serialized batch of TBSCertificateLogEntry records in a defined binary format that monitors parse to extract identity data and verify batch integrity.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/ProposedEntry"
+        },
+        {
+          "required": [
+            "apiVersion",
+            "spec"
+          ],
+          "properties": {
+            "apiVersion": {
+              "type": "string",
+              "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+            },
+            "spec": {
+              "type": "object",
+              "$ref": "pkg/types/rhmtcmonitoring/rhmtcmonitoring_schema.json"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "rpm": {
       "description": "RPM package",
       "type": "object",
@@ -2725,6 +2777,52 @@ func init() {
         }
       }
     },
+    "RhmtccommitmentV001SchemaSubtreeSignaturesItems0": {
+      "type": "object",
+      "required": [
+        "algorithm",
+        "signature",
+        "subtreeRoot",
+        "treeSize",
+        "start",
+        "end"
+      ],
+      "properties": {
+        "algorithm": {
+          "description": "The signature algorithm used (e.g. ECDSA_P256_SHA_256, ML_DSA_65).",
+          "type": "string"
+        },
+        "end": {
+          "description": "End index (exclusive) of the subtree range.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "keyHint": {
+          "description": "Hint to identify the signing public key (first 8 hex chars of key hash).",
+          "type": "string"
+        },
+        "signature": {
+          "description": "The signature bytes (base64-encoded).",
+          "type": "string",
+          "format": "byte"
+        },
+        "start": {
+          "description": "Start index (inclusive) of the subtree range.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "subtreeRoot": {
+          "description": "The Merkle subtree root hash that was signed (32 bytes, base64-encoded).",
+          "type": "string",
+          "format": "byte"
+        },
+        "treeSize": {
+          "description": "The size of the Merkle tree (number of leaf nodes).",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
     "RpmV001SchemaPackage": {
       "description": "Information about the package associated with the entry",
       "type": "object",
@@ -4078,6 +4176,135 @@ func init() {
       },
       "$schema": "http://json-schema.org/draft-07/schema",
       "$id": "http://rekor.sigstore.dev/types/timestamp/timestamp_v0_0_1_schema.json"
+    },
+    "rhmtccommitment": {
+      "description": "RH MTC commitment entry. Small, client-verifiable entry whose body can be reconstructed from bundle fields, enabling independent leaf hash verification and SET validation.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/ProposedEntry"
+        },
+        {
+          "required": [
+            "apiVersion",
+            "spec"
+          ],
+          "properties": {
+            "apiVersion": {
+              "type": "string",
+              "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+            },
+            "spec": {
+              "$ref": "#/definitions/rhmtccommitmentSchema"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "rhmtccommitmentSchema": {
+      "description": "Schema for RH MTC commitment entry objects",
+      "type": "object",
+      "title": "Rhmtccommitment Schema",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/rhmtccommitmentV001Schema"
+        }
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema",
+      "$id": "http://rekor.sigstore.dev/types/rhmtccommitment/rhmtccommitment_schema.json"
+    },
+    "rhmtccommitmentV001Schema": {
+      "description": "Schema for the client-verifiable commitment entry. Its leaf hash can be independently computed from {logId, monitoringLogId, monitoringLogIndex, subtreeSignatures} without any additional data. Certificate holders reconstruct this JSON, compute SHA-256(0x00 || canonicalized), and verify against the inclusion proof.",
+      "type": "object",
+      "title": "RH MTC Commitment v0.0.1 Schema",
+      "required": [
+        "logId",
+        "monitoringLogId",
+        "monitoringLogIndex",
+        "subtreeSignatures"
+      ],
+      "properties": {
+        "logId": {
+          "description": "Identifier of the commitment log (32 bytes, base64-encoded).",
+          "type": "string",
+          "format": "byte"
+        },
+        "monitoringLogId": {
+          "description": "Identifier of the monitoring log (32 bytes, base64-encoded).",
+          "type": "string",
+          "format": "byte"
+        },
+        "monitoringLogIndex": {
+          "description": "The log index of the corresponding rhmtcmonitoring entry in the monitoring log.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "subtreeSignatures": {
+          "description": "One or more signatures over the Merkle subtree root, one per configured signing key.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/RhmtccommitmentV001SchemaSubtreeSignaturesItems0"
+          }
+        }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema",
+      "$id": "http://rekor.sigstore.dev/types/rhmtccommitment/v0.0.1/rhmtccommitment_v0_0_1_schema.json"
+    },
+    "rhmtcmonitoring": {
+      "description": "RH MTC monitoring entry. Stores a serialized batch of TBSCertificateLogEntry records in a defined binary format that monitors parse to extract identity data and verify batch integrity.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/ProposedEntry"
+        },
+        {
+          "required": [
+            "apiVersion",
+            "spec"
+          ],
+          "properties": {
+            "apiVersion": {
+              "type": "string",
+              "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+            },
+            "spec": {
+              "$ref": "#/definitions/rhmtcmonitoringSchema"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "rhmtcmonitoringSchema": {
+      "description": "Schema for RH MTC monitoring entry objects",
+      "type": "object",
+      "title": "Rhmtcmonitoring Schema",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/rhmtcmonitoringV001Schema"
+        }
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema",
+      "$id": "http://rekor.sigstore.dev/types/rhmtcmonitoring/rhmtcmonitoring_schema.json"
+    },
+    "rhmtcmonitoringV001Schema": {
+      "description": "Schema for RH MTC monitoring entries. Stores a serialized batch of TBSCertificateLogEntry records in a defined binary format (uint32 count || (uint32 len || entry)*) that monitors parse to extract identity data. The leaf hash is SHA-256(0x00 || data). Monitors MUST verify that the corresponding rhmtccommitment entry's subtreeSignatures cover this batch by computing ComputeMerkleRoot(ParseBatchEntries(data)) and comparing with subtreeSignatures[i].subtreeRoot.",
+      "type": "object",
+      "title": "RH MTC Monitoring v0.0.1 Schema",
+      "required": [
+        "data"
+      ],
+      "properties": {
+        "data": {
+          "description": "Serialized batch of TBSCertificateLogEntry records. Binary format: uint32(count) || (uint32(len) || entry_bytes)*. Each entry_bytes uses the IETF MTC draft binary encoding. Base64-encoded for JSON transport.",
+          "type": "string",
+          "format": "byte"
+        }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema",
+      "$id": "http://rekor.sigstore.dev/types/rhmtcmonitoring/v0.0.1/rhmtcmonitoring_v0_0_1_schema.json"
     },
     "rpm": {
       "description": "RPM package",

@@ -1,0 +1,15 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "http://rekor.sigstore.dev/types/rhmtcmonitoring/v0.0.1/rhmtcmonitoring_v0_0_1_schema.json",
+    "title": "RH MTC Monitoring v0.0.1 Schema",
+    "description": "Schema for RH MTC monitoring entries. Stores a serialized batch of TBSCertificateLogEntry records in a defined binary format (uint32 count || (uint32 len || entry)*) that monitors parse to extract identity data. The leaf hash is SHA-256(0x00 || data). Monitors MUST verify that the corresponding rhmtccommitment entry's subtreeSignatures cover this batch by computing ComputeMerkleRoot(ParseBatchEntries(data)) and comparing with subtreeSignatures[i].subtreeRoot.",
+    "type": "object",
+    "properties": {
+        "data": {
+            "description": "Serialized batch of TBSCertificateLogEntry records. Binary format: uint32(count) || (uint32(len) || entry_bytes)*. Each entry_bytes uses the IETF MTC draft binary encoding. Base64-encoded for JSON transport.",
+            "type": "string",
+            "format": "byte"
+        }
+    },
+    "required": ["data"]
+}
