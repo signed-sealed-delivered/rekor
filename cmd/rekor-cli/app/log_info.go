@@ -18,7 +18,6 @@ package app
 import (
 	"context"
 	"crypto"
-	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -26,6 +25,7 @@ import (
 	"github.com/go-openapi/swag/conv"
 	rclient "github.com/sigstore/rekor/pkg/generated/client"
 	"github.com/sigstore/rekor/pkg/generated/models"
+	"github.com/sigstore/sigstore/pkg/cryptoutils"
 
 	"github.com/sigstore/rekor/pkg/verify"
 	"github.com/spf13/cobra"
@@ -177,7 +177,7 @@ func loadVerifier(ctx context.Context, rekorClient *rclient.Rekor, treeID string
 		return nil, errors.New("failed to decode public key of server")
 	}
 
-	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	pub, err := cryptoutils.UnmarshalDERToPublicKey(block.Bytes)
 	if err != nil {
 		return nil, err
 	}

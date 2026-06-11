@@ -17,11 +17,11 @@ limitations under the License.
 package signer
 
 import (
-	"crypto"
 	"fmt"
+	"os"
 
+	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"github.com/sigstore/sigstore/pkg/signature"
-	"go.step.sm/crypto/pemutil"
 )
 
 // returns an file based signer and verify, used for spinning up local instances
@@ -30,14 +30,21 @@ type File struct {
 }
 
 func NewFile(keyPath, keyPass string) (*File, error) {
-	opaqueKey, err := pemutil.Read(keyPath, pemutil.WithPassword([]byte(keyPass)))
+	fileBytes, err := os.ReadFile(keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("file: provide a valid signer, %s is not valid: %w", keyPath, err)
 	}
-
-	signer, err := signature.LoadSignerVerifier(opaqueKey, crypto.SHA256)
-	if err != nil {
-		return nil, fmt.Errorf(`file: loaded private key from %s can't be used to sign: %w`, keyPath, err)
+	var pf cryptoutils.PassFunc
+	if keyPass != "" {
+		pf = func(_ bool) ([]byte, error) { return []byte(keyPass), nil }
 	}
-	return &File{signer}, nil
+	opaqueKey, err := cryptoutils.UnmarshalPEMToPrivateKey(fileBytes, pf)
+	if err != nil {
+		return nil, fmt.Errorf("file: provide a valid signer, %s is not valid: %w", keyPath, err)
+	}
+	sv, err := signature.LoadDefaultSignerVerifier(opaqueKey)
+	if err != nil {
+		return nil, fmt.Errorf("file: loaded private key from %s can't be used to sign: %w", keyPath, err)
+	}
+	return &File{sv}, nil
 }

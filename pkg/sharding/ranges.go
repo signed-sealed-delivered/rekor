@@ -17,9 +17,6 @@ package sharding
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/x509"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -168,13 +165,11 @@ func initializeRange(ctx context.Context, r LogRange) (LogRange, error) {
 	}
 	r.PemPubKey = string(pemPubKey)
 
-	// Initialize log ID from public key
-	b, err := x509.MarshalPKIXPublicKey(pubKey)
+	keyID, err := cryptoutils.NewKeyIdentity(pubKey)
 	if err != nil {
 		return LogRange{}, err
 	}
-	pubkeyHashBytes := sha256.Sum256(b)
-	r.LogID = hex.EncodeToString(pubkeyHashBytes[:])
+	r.LogID = keyID.IDString()
 
 	return r, nil
 }

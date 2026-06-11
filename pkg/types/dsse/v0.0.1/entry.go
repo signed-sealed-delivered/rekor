@@ -18,7 +18,6 @@ package dsse
 import (
 	"bytes"
 	"context"
-	"crypto"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -481,7 +480,7 @@ func verifyEnvelope(allPubKeyBytes [][]byte, env *dsse.Envelope) (map[string]*x5
 			return nil, fmt.Errorf("could not parse public key as x509: %w", err)
 		}
 
-		vfr, err := signature.LoadVerifier(key.CryptoPubKey(), crypto.SHA256)
+		vfr, err := signature.LoadDefaultVerifier(key.CryptoPubKey())
 		if err != nil {
 			return nil, fmt.Errorf("could not load verifier: %w", err)
 		}

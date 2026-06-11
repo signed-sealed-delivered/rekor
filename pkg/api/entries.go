@@ -228,11 +228,7 @@ func getPublicKey(identity identity.Identity) (crypto.PublicKey, error) {
 	switch identityCrypto := identity.Crypto.(type) {
 	case *x509.Certificate:
 		return identityCrypto.PublicKey, nil
-	case *rsa.PublicKey:
-		return identityCrypto, nil
-	case *ecdsa.PublicKey:
-		return identityCrypto, nil
-	case ed25519.PublicKey:
+	case crypto.PublicKey:
 		return identityCrypto, nil
 	default:
 		return nil, fmt.Errorf("unsupported public key type: %T", identityCrypto)

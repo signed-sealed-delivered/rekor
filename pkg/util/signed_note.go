@@ -19,19 +19,14 @@ import (
 	"bufio"
 	"bytes"
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/ed25519"
-	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"github.com/sigstore/sigstore/pkg/signature"
-	"github.com/sigstore/sigstore/pkg/signature/options"
 	"golang.org/x/mod/sumdb/note"
 )
 
@@ -77,7 +72,6 @@ func (s SignedNote) Verify(verifier signature.Verifier) bool {
 	}
 
 	msg := []byte(s.Note)
-	digest := sha256.Sum256(msg)
 
 	pk, err := verifier.PublicKey()
 	if err != nil {
@@ -98,16 +92,8 @@ func (s SignedNote) Verify(verifier signature.Verifier) bool {
 			return false
 		}
 
-		opts := []signature.VerifyOption{}
-		switch pk.(type) {
-		case *rsa.PublicKey, *ecdsa.PublicKey:
-			opts = append(opts, options.WithDigest(digest[:]))
-		case ed25519.PublicKey:
-			break
-		default:
-			return false
-		}
-		if err := verifier.VerifySignature(bytes.NewReader(sigBytes), bytes.NewReader(msg), opts...); err != nil {
+		// The verifier handles hashing internally based on its configured algorithm.
+		if err := verifier.VerifySignature(bytes.NewReader(sigBytes), bytes.NewReader(msg)); err != nil {
 			return false
 		}
 	}
@@ -201,11 +187,9 @@ func SignedNoteValidator(strToValidate string) bool {
 }
 
 func getPublicKeyHash(publicKey crypto.PublicKey) (uint32, error) {
-	pubKeyBytes, err := x509.MarshalPKIXPublicKey(publicKey)
+	keyID, err := cryptoutils.NewKeyIdentity(publicKey)
 	if err != nil {
-		return 0, fmt.Errorf("marshalling public key: %w", err)
+		return 0, fmt.Errorf("computing key identity: %w", err)
 	}
-	pkSha := sha256.Sum256(pubKeyBytes)
-	hash := binary.BigEndian.Uint32(pkSha[:])
-	return hash, nil
+	return binary.BigEndian.Uint32(keyID.Hint()), nil
 }
