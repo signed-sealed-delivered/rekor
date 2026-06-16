@@ -26,7 +26,7 @@ import (
 // TestRetrieveUUIDFromTree_UnconfiguredTreeID tests that retrieveUUIDFromTree returns ErrNotFound when the tree ID is not in the configured shard set.
 // This ensures that the API correctly rejects requests for tree IDs that are not configured, preventing unnecessary calls to the Trillian client manager and backend.
 func TestRetrieveUUIDFromTree_UnconfiguredTreeID(t *testing.T) {
-	ranges, err := sharding.NewLogRanges(context.Background(), "", 1, signer.SigningConfig{SigningSchemeOrKeyPath: "memory"})
+	ranges, err := sharding.NewLogRanges(context.Background(), "", 1, signer.SigningConfig{SignerConfig: signer.SignerConfig{SigningSchemeOrKeyPath: "memory"}})
 	if err != nil {
 		t.Fatalf("Failed to create LogRanges: %v", err)
 	}

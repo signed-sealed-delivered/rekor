@@ -65,20 +65,31 @@ const (
 	maxSearchQueries = 10
 )
 
-func signEntry(ctx context.Context, signer signature.Signer, entry models.LogEntryAnon) ([]byte, error) {
+// signEntryMultiple signs entry with each signer and returns all signatures paired with their logIDs.
+func signEntryMultiple(ctx context.Context, signers []signature.Signer, logIDs []string, entry models.LogEntryAnon) ([][]byte, []string, error) {
+	if len(signers) == 0 {
+		return nil, nil, fmt.Errorf("no signers provided")
+	}
+	if len(signers) != len(logIDs) {
+		return nil, nil, fmt.Errorf("signers and logIDs length mismatch: %d vs %d", len(signers), len(logIDs))
+	}
 	payload, err := entry.MarshalBinary()
 	if err != nil {
-		return nil, fmt.Errorf("marshalling error: %w", err)
+		return nil, nil, fmt.Errorf("marshalling error: %w", err)
 	}
 	canonicalized, err := jsoncanonicalizer.Transform(payload)
 	if err != nil {
-		return nil, fmt.Errorf("canonicalizing error: %w", err)
+		return nil, nil, fmt.Errorf("canonicalizing error: %w", err)
 	}
-	signature, err := signer.SignMessage(bytes.NewReader(canonicalized), options.WithContext(ctx))
-	if err != nil {
-		return nil, fmt.Errorf("signing error: %w", err)
+	signatures := make([][]byte, len(signers))
+	for i, signer := range signers {
+		sig, err := signer.SignMessage(bytes.NewReader(canonicalized), options.WithContext(ctx))
+		if err != nil {
+			return nil, nil, fmt.Errorf("signing error for signer %d: %w", i, err)
+		}
+		signatures[i] = sig
 	}
-	return signature, nil
+	return signatures, logIDs, nil
 }
 
 // logEntryFromLeaf creates a signed LogEntry struct from trillian structs
@@ -108,10 +119,11 @@ func logEntryFromLeaf(ctx context.Context, leaf *trillian.LogLeaf, signedLogRoot
 		IntegratedTime: conv.Pointer(leaf.IntegrateTimestamp.AsTime().Unix()),
 	}
 
-	signature, err := signEntry(ctx, logRange.Signer, logEntryAnon)
+	signatures, sigLogIDs, err := signEntryMultiple(ctx, logRange.Signers, logRange.LogIDs, logEntryAnon)
 	if err != nil {
 		return nil, fmt.Errorf("signing entry error: %w", err)
 	}
+	primarySignature := signatures[0]
 
 	// If tree ID is inactive, use cached checkpoint
 	var sc string
@@ -119,7 +131,7 @@ func logEntryFromLeaf(ctx context.Context, leaf *trillian.LogLeaf, signedLogRoot
 	if ok {
 		sc = val
 	} else {
-		scBytes, err := util.CreateAndSignCheckpoint(ctx, viper.GetString("rekor_server.hostname"), tid, root.TreeSize, root.RootHash, logRange.Signer)
+		scBytes, err := util.CreateAndSignCheckpointMultiple(ctx, viper.GetString("rekor_server.hostname"), tid, root.TreeSize, root.RootHash, logRange.Signers)
 		if err != nil {
 			return nil, err
 		}
@@ -178,10 +190,23 @@ func logEntryFromLeaf(ctx context.Context, leaf *trillian.LogLeaf, signedLogRoot
 		}
 	}
 
-	logEntryAnon.Verification = &models.LogEntryAnonVerification{
+	verification := &models.LogEntryAnonVerification{
 		InclusionProof:       &inclusionProof,
-		SignedEntryTimestamp: strfmt.Base64(signature),
+		SignedEntryTimestamp: strfmt.Base64(primarySignature),
 	}
+	if len(signatures) > 1 {
+		for i, sig := range signatures[1:] {
+			logID := sigLogIDs[i+1]
+			sigBytes := strfmt.Base64(sig)
+			verification.AdditionalSignedEntryTimestamps = append(
+				verification.AdditionalSignedEntryTimestamps,
+				&models.LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0{
+					LogID:                &logID,
+					SignedEntryTimestamp: &sigBytes,
+				})
+		}
+	}
+	logEntryAnon.Verification = verification
 
 	return models.LogEntry{
 		entryID: logEntryAnon}, nil
@@ -422,10 +447,12 @@ func createLogEntry(params entries.CreateLogEntryParams) (models.LogEntry, middl
 		}
 	}
 
-	signature, err := signEntry(ctx, api.logRanges.GetActive().Signer, logEntryAnon)
+	activeRange := api.logRanges.GetActive()
+	signatures, sigLogIDs, err := signEntryMultiple(ctx, activeRange.Signers, activeRange.LogIDs, logEntryAnon)
 	if err != nil {
 		return nil, handleRekorAPIError(params, http.StatusInternalServerError, fmt.Errorf("signing entry error: %w", err), signingError)
 	}
+	primarySignature := signatures[0]
 
 	root := &ttypes.LogRootV1{}
 	if err := root.UnmarshalBinary(resp.GetLeafAndProofResult.SignedLogRoot.LogRoot); err != nil {
@@ -436,7 +463,7 @@ func createLogEntry(params entries.CreateLogEntryParams) (models.LogEntry, middl
 		hashes = append(hashes, hex.EncodeToString(hash))
 	}
 
-	scBytes, err := util.CreateAndSignCheckpoint(ctx, viper.GetString("rekor_server.hostname"), api.ActiveTreeID(), root.TreeSize, root.RootHash, api.logRanges.GetActive().Signer)
+	scBytes, err := util.CreateAndSignCheckpointMultiple(ctx, viper.GetString("rekor_server.hostname"), api.ActiveTreeID(), root.TreeSize, root.RootHash, activeRange.Signers)
 	if err != nil {
 		return nil, handleRekorAPIError(params, http.StatusInternalServerError, err, sthGenerateError)
 	}
@@ -449,10 +476,23 @@ func createLogEntry(params entries.CreateLogEntryParams) (models.LogEntry, middl
 		Checkpoint: conv.Pointer(string(scBytes)),
 	}
 
-	logEntryAnon.Verification = &models.LogEntryAnonVerification{
+	verification := &models.LogEntryAnonVerification{
 		InclusionProof:       &inclusionProof,
-		SignedEntryTimestamp: strfmt.Base64(signature),
+		SignedEntryTimestamp: strfmt.Base64(primarySignature),
 	}
+	if len(signatures) > 1 {
+		for i, sig := range signatures[1:] {
+			logID := sigLogIDs[i+1]
+			sigBytes := strfmt.Base64(sig)
+			verification.AdditionalSignedEntryTimestamps = append(
+				verification.AdditionalSignedEntryTimestamps,
+				&models.LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0{
+					LogID:                &logID,
+					SignedEntryTimestamp: &sigBytes,
+				})
+		}
+	}
+	logEntryAnon.Verification = verification
 
 	logEntry := models.LogEntry{
 		entryID: logEntryAnon,

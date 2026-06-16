@@ -19,10 +19,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"os"
 	"slices"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
+	"sigs.k8s.io/yaml"
 
 	v1 "github.com/sigstore/protobuf-specs/gen/pb-go/common/v1"
 	"github.com/sigstore/rekor/pkg/indexstorage"
@@ -56,17 +58,7 @@ func (api *API) ActiveTreeID() int64 {
 	return api.logRanges.GetActive().TreeID
 }
 
-var AllowedClientSigningAlgorithms = []v1.PublicKeyDetails{
-	v1.PublicKeyDetails_PKIX_RSA_PKCS1V15_2048_SHA256,
-	v1.PublicKeyDetails_PKIX_RSA_PKCS1V15_3072_SHA256,
-	v1.PublicKeyDetails_PKIX_RSA_PKCS1V15_4096_SHA256,
-	v1.PublicKeyDetails_PKIX_ECDSA_P256_SHA_256,
-	v1.PublicKeyDetails_PKIX_ECDSA_P384_SHA_384,
-	v1.PublicKeyDetails_PKIX_ECDSA_P521_SHA_512,
-	v1.PublicKeyDetails_PKIX_ED25519,
-	v1.PublicKeyDetails_PKIX_ED25519_PH,
-}
-var DefaultClientSigningAlgorithms = AllowedClientSigningAlgorithms
+var AllowedClientSigningAlgorithms = signature.SupportedSignatureAlgorithms()
 
 func NewAPI(treeID int64) (*API, error) {
 	ctx := context.Background()
@@ -90,14 +82,31 @@ func NewAPI(treeID int64) (*API, error) {
 	}
 
 	shardingConfig := viper.GetString("trillian_log_server.sharding_config")
-	signingConfig := signer.SigningConfig{
-		SigningSchemeOrKeyPath: viper.GetString("rekor_server.signer"),
-		FileSignerPassword:     viper.GetString("rekor_server.signer-passwd"),
-		TinkKEKURI:             viper.GetString("rekor_server.tink_kek_uri"),
-		TinkKeysetPath:         viper.GetString("rekor_server.tink_keyset_path"),
-		GCPKMSRetries:          viper.GetUint("rekor_server.signer.gcpkms.retries"),
-		GCPKMSTimeout:          viper.GetUint("rekor_server.signer.gcpkms.timeout"),
+
+	var signingConfig signer.SigningConfig
+	if signersConfigPath := viper.GetString("rekor_server.signers_config"); signersConfigPath != "" {
+		data, err := os.ReadFile(signersConfigPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading signers config file %s: %w", signersConfigPath, err)
+		}
+		if err := yaml.Unmarshal(data, &signingConfig); err != nil {
+			return nil, fmt.Errorf("parsing signers config file %s: %w", signersConfigPath, err)
+		}
+		log.Logger.Infof("Loaded %d signers from config file %s (multi-signer mode)",
+			len(signingConfig.Signers), signersConfigPath)
+	} else {
+		signingConfig = signer.SigningConfig{
+			SignerConfig: signer.SignerConfig{
+				SigningSchemeOrKeyPath: viper.GetString("rekor_server.signer"),
+				FileSignerPassword:     viper.GetString("rekor_server.signer-passwd"),
+				TinkKEKURI:             viper.GetString("rekor_server.tink_kek_uri"),
+				TinkKeysetPath:         viper.GetString("rekor_server.tink_keyset_path"),
+				GCPKMSRetries:          viper.GetUint("rekor_server.signer.gcpkms.retries"),
+				GCPKMSTimeout:          viper.GetUint("rekor_server.signer.gcpkms.timeout"),
+			},
+		}
 	}
+
 	ranges, err := sharding.NewLogRanges(ctx, shardingConfig, treeID, signingConfig)
 	if err != nil {
 		return nil, fmt.Errorf("unable get sharding details from sharding config: %w", err)
@@ -121,7 +130,7 @@ func NewAPI(treeID int64) (*API, error) {
 	algorithmsOption := viper.GetStringSlice("client-signing-algorithms")
 	var algorithms []v1.PublicKeyDetails
 	if len(algorithmsOption) == 0 {
-		algorithms = DefaultClientSigningAlgorithms
+		algorithms = AllowedClientSigningAlgorithms
 	} else {
 		for _, a := range algorithmsOption {
 			algorithm, err := signature.ParseSignatureAlgorithmFlag(a)
@@ -150,7 +159,7 @@ func NewAPI(treeID int64) (*API, error) {
 		if !ok {
 			return nil, fmt.Errorf("no root found for inactive shard %d", r.TreeID)
 		}
-		cp, err := util.CreateAndSignCheckpoint(ctx, viper.GetString("rekor_server.hostname"), r.TreeID, uint64(r.TreeLength), root.RootHash, r.Signer) //nolint:gosec
+		cp, err := util.CreateAndSignCheckpointMultiple(ctx, viper.GetString("rekor_server.hostname"), r.TreeID, uint64(r.TreeLength), root.RootHash, r.Signers) //nolint:gosec
 		if err != nil {
 			return nil, fmt.Errorf("error signing checkpoint for inactive shard %d: %w", r.TreeID, err)
 		}

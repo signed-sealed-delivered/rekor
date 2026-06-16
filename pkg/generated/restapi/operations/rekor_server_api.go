@@ -103,6 +103,12 @@ func NewRekorServerAPI(spec *loads.Document) *RekorServerAPI {
 			return middleware.NotImplemented("operation pubkey.GetPublicKey has not yet been implemented")
 		}),
 
+		PubkeyGetPublicKeysHandler: pubkey.GetPublicKeysHandlerFunc(func(params pubkey.GetPublicKeysParams) middleware.Responder {
+			_ = params
+
+			return middleware.NotImplemented("operation pubkey.GetPublicKeys has not yet been implemented")
+		}),
+
 		IndexSearchIndexHandler: index.SearchIndexHandlerFunc(func(params index.SearchIndexParams) middleware.Responder {
 			_ = params
 
@@ -165,6 +171,8 @@ type RekorServerAPI struct {
 	TlogGetLogProofHandler tlog.GetLogProofHandler
 	// PubkeyGetPublicKeyHandler sets the operation handler for the get public key operation
 	PubkeyGetPublicKeyHandler pubkey.GetPublicKeyHandler
+	// PubkeyGetPublicKeysHandler sets the operation handler for the get public keys operation
+	PubkeyGetPublicKeysHandler pubkey.GetPublicKeysHandler
 	// IndexSearchIndexHandler sets the operation handler for the search index operation
 	IndexSearchIndexHandler index.SearchIndexHandler
 	// EntriesSearchLogQueryHandler sets the operation handler for the search log query operation
@@ -266,6 +274,9 @@ func (o *RekorServerAPI) Validate() error {
 	}
 	if o.PubkeyGetPublicKeyHandler == nil {
 		unregistered = append(unregistered, "pubkey.GetPublicKeyHandler")
+	}
+	if o.PubkeyGetPublicKeysHandler == nil {
+		unregistered = append(unregistered, "pubkey.GetPublicKeysHandler")
 	}
 	if o.IndexSearchIndexHandler == nil {
 		unregistered = append(unregistered, "index.SearchIndexHandler")
@@ -390,6 +401,10 @@ func (o *RekorServerAPI) initHandlerCache() {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
 	o.handlers["GET"]["/api/v1/log/publicKey"] = pubkey.NewGetPublicKey(o.context, o.PubkeyGetPublicKeyHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/api/v1/log/publicKeys"] = pubkey.NewGetPublicKeys(o.context, o.PubkeyGetPublicKeysHandler)
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}

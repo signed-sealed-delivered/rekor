@@ -341,6 +341,43 @@ func init() {
           }
         }
       }
+    },
+    "/api/v1/log/publicKeys": {
+      "get": {
+        "description": "Returns all public keys configured for this transparency log. In single-signer mode, returns an array with one key.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pubkey"
+        ],
+        "summary": "Retrieve all public keys that can be used to validate the signed tree head",
+        "operationId": "getPublicKeys",
+        "parameters": [
+          {
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "description": "The tree ID of the tree you wish to get public keys for",
+            "name": "treeID",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The public keys",
+            "schema": {
+              "type": "array",
+              "items": {
+                "description": "PEM-encoded public key",
+                "type": "string"
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/responses/InternalServerError"
+          }
+        }
+      }
     }
   },
   "definitions": {
@@ -487,6 +524,28 @@ func init() {
           "verification": {
             "type": "object",
             "properties": {
+              "additionalSignedEntryTimestamps": {
+                "description": "Additional signed entry timestamps paired with the logID of the signer, from multi-signer transparency logs.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "logID",
+                    "signedEntryTimestamp"
+                  ],
+                  "properties": {
+                    "logID": {
+                      "description": "The hex-encoded SHA256 hash of the DER-encoded public key of the log that produced this SET.",
+                      "type": "string"
+                    },
+                    "signedEntryTimestamp": {
+                      "description": "The signed entry timestamp bytes.",
+                      "type": "string",
+                      "format": "byte"
+                    }
+                  }
+                }
+              },
               "inclusionProof": {
                 "$ref": "#/definitions/InclusionProof"
               },
@@ -1293,6 +1352,46 @@ func init() {
             "description": "The public key",
             "schema": {
               "type": "string"
+            }
+          },
+          "default": {
+            "description": "There was an internal error in the server while processing the request",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/log/publicKeys": {
+      "get": {
+        "description": "Returns all public keys configured for this transparency log. In single-signer mode, returns an array with one key.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pubkey"
+        ],
+        "summary": "Retrieve all public keys that can be used to validate the signed tree head",
+        "operationId": "getPublicKeys",
+        "parameters": [
+          {
+            "pattern": "^[0-9]+$",
+            "type": "string",
+            "description": "The tree ID of the tree you wish to get public keys for",
+            "name": "treeID",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The public keys",
+            "schema": {
+              "type": "array",
+              "items": {
+                "description": "PEM-encoded public key",
+                "type": "string"
+              }
             }
           },
           "default": {
@@ -2368,6 +2467,13 @@ func init() {
         "verification": {
           "type": "object",
           "properties": {
+            "additionalSignedEntryTimestamps": {
+              "description": "Additional signed entry timestamps paired with the logID of the signer, from multi-signer transparency logs.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0"
+              }
+            },
             "inclusionProof": {
               "$ref": "#/definitions/InclusionProof"
             },
@@ -2392,11 +2498,36 @@ func init() {
     "LogEntryAnonVerification": {
       "type": "object",
       "properties": {
+        "additionalSignedEntryTimestamps": {
+          "description": "Additional signed entry timestamps paired with the logID of the signer, from multi-signer transparency logs.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0"
+          }
+        },
         "inclusionProof": {
           "$ref": "#/definitions/InclusionProof"
         },
         "signedEntryTimestamp": {
           "description": "Signature over the logID, logIndex, body and integratedTime.",
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "LogEntryAnonVerificationAdditionalSignedEntryTimestampsItems0": {
+      "type": "object",
+      "required": [
+        "logID",
+        "signedEntryTimestamp"
+      ],
+      "properties": {
+        "logID": {
+          "description": "The hex-encoded SHA256 hash of the DER-encoded public key of the log that produced this SET.",
+          "type": "string"
+        },
+        "signedEntryTimestamp": {
+          "description": "The signed entry timestamp bytes.",
           "type": "string",
           "format": "byte"
         }

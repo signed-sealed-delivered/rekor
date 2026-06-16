@@ -98,6 +98,32 @@ paths:
         default:
           $ref: '#/responses/InternalServerError'
 
+  /api/v1/log/publicKeys:
+    get:
+      summary: Retrieve all public keys that can be used to validate the signed tree head
+      description: Returns all public keys configured for this transparency log. In single-signer mode, returns an array with one key.
+      operationId: getPublicKeys
+      tags:
+        - pubkey
+      parameters:
+        - in: query
+          name: treeID
+          type: string
+          pattern: '^[0-9]+$'
+          description: The tree ID of the tree you wish to get public keys for
+      produces:
+        - application/json
+      responses:
+        200:
+          description: The public keys
+          schema:
+            type: array
+            items:
+              type: string
+              description: PEM-encoded public key
+        default:
+          $ref: '#/responses/InternalServerError'
+
   /api/v1/log/proof:
     get:
       summary: Get information required to generate a consistency proof for the transparency log
@@ -474,6 +500,22 @@ definitions:
                 # 2. Canonicalize the remaining JSON document by following RFC 8785 rules
                 # 3. Verify the canonicalized payload and signedEntryTimestamp against rekor's public key
               description: Signature over the logID, logIndex, body and integratedTime.
+            additionalSignedEntryTimestamps:
+              type: array
+              items:
+                type: object
+                properties:
+                  logID:
+                    type: string
+                    description: The hex-encoded SHA256 hash of the DER-encoded public key of the log that produced this SET.
+                  signedEntryTimestamp:
+                    type: string
+                    format: byte
+                    description: The signed entry timestamp bytes.
+                required:
+                  - logID
+                  - signedEntryTimestamp
+              description: Additional signed entry timestamps paired with the logID of the signer, from multi-signer transparency logs.
       required:
         - "logID"
         - "logIndex"

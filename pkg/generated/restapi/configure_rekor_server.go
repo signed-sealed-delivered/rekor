@@ -96,6 +96,7 @@ func configureAPI(api *operations.RekorServerAPI) http.Handler {
 	api.EntriesGetLogEntryByUUIDHandler = entries.GetLogEntryByUUIDHandlerFunc(pkgapi.GetLogEntryByUUIDNotImplementedHandler)
 	api.EntriesSearchLogQueryHandler = entries.SearchLogQueryHandlerFunc(pkgapi.SearchLogQueryNotImplementedHandler)
 	api.PubkeyGetPublicKeyHandler = pubkey.GetPublicKeyHandlerFunc(pkgapi.GetPublicKeyNotImplementedHandler)
+	api.PubkeyGetPublicKeysHandler = pubkey.GetPublicKeysHandlerFunc(pkgapi.GetPublicKeysNotImplementedHandler)
 	api.TlogGetLogProofHandler = tlog.GetLogProofHandlerFunc(pkgapi.GetLogProofNotImplementedHandler)
 
 	enabledAPIEndpoints := viper.GetStringSlice("enabled_api_endpoints")
@@ -112,6 +113,8 @@ func configureAPI(api *operations.RekorServerAPI) http.Handler {
 			api.TlogGetLogInfoHandler = tlog.GetLogInfoHandlerFunc(pkgapi.GetLogInfoHandler)
 		case "getPublicKey":
 			api.PubkeyGetPublicKeyHandler = pubkey.GetPublicKeyHandlerFunc(pkgapi.GetPublicKeyHandler)
+			// Also enable getPublicKeys for multi-signer mode support
+			api.PubkeyGetPublicKeysHandler = pubkey.GetPublicKeysHandlerFunc(pkgapi.GetPublicKeysHandler)
 		case "getLogProof":
 			api.TlogGetLogProofHandler = tlog.GetLogProofHandlerFunc(pkgapi.GetLogProofHandler)
 		case "createLogEntry":
@@ -136,8 +139,10 @@ func configureAPI(api *operations.RekorServerAPI) http.Handler {
 			api.AddMiddlewareFor("GET", "/api/v1/log", middleware.NoCache) // not cacheable
 			recordMetricsForAPI(api, "GET", "/api/v1/log")                 // add metrics
 		case "getPublicKey":
-			api.AddMiddlewareFor("GET", "/api/v1/log/publicKey", middleware.NoCache) // not cacheable
-			recordMetricsForAPI(api, "GET", "/api/v1/log/publicKey")                 // add metrics
+			api.AddMiddlewareFor("GET", "/api/v1/log/publicKey", middleware.NoCache)  // not cacheable
+			recordMetricsForAPI(api, "GET", "/api/v1/log/publicKey")                  // add metrics
+			api.AddMiddlewareFor("GET", "/api/v1/log/publicKeys", middleware.NoCache) // not cacheable
+			recordMetricsForAPI(api, "GET", "/api/v1/log/publicKeys")                 // add metrics
 		case "getLogProof":
 			api.AddMiddlewareFor("GET", "/api/v1/log/proof", middleware.NoCache) // not cacheable
 			recordMetricsForAPI(api, "GET", "/api/v1/log/proof")                 // add metrics

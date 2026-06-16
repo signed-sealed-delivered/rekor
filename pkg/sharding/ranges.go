@@ -50,12 +50,17 @@ type LogRange struct {
 	SigningConfig signer.SigningConfig       `json:"signingConfig" yaml:"signingConfig"` // if unset, assume same as active tree
 	GRPCConfig    *trillianclient.GRPCConfig `json:"grpcEndpoint" yaml:"grpcEndpoint"`   // if unset, assume same as active tree
 	Signer        signature.Signer
-	PemPubKey     string // PEM-encoded PKIX public key
-	LogID         string // Hex-encoded SHA256 digest of PKIX-encoded public key
+	PemPubKey     string // primary PEM-encoded PKIX public key (PemPubKeys[0])
+	LogID         string // primary hex-encoded SHA256 digest of PKIX public key (LogIDs[0])
+	// Signers contains all signers for this range; more than one indicates multi-signer mode.
+	Signers []signature.Signer
+	// PemPubKeys and LogIDs contain one entry per signer; index 0 is primary.
+	PemPubKeys []string
+	LogIDs     []string
 }
 
 func (l LogRange) String() string {
-	return fmt.Sprintf("{ TreeID: %v, TreeLength: %v, SigningScheme: %v, PemPubKey: %v, LogID: %v }", l.TreeID, l.TreeLength, l.SigningConfig.SigningSchemeOrKeyPath, l.PemPubKey, l.LogID)
+	return fmt.Sprintf("{ TreeID: %v, TreeLength: %v, NumSigners: %d, PemPubKey: %v, LogID: %v }", l.TreeID, l.TreeLength, len(l.Signers), l.PemPubKey, l.LogID)
 }
 
 // NewLogRanges initializes the active and any inactive log shards from a config file.
@@ -146,30 +151,34 @@ func initializeRange(ctx context.Context, r LogRange) (LogRange, error) {
 		return LogRange{}, fmt.Errorf("signing config not set, unable to initialize shard signer")
 	}
 
-	// Initialize shard signer
-	s, err := signer.New(ctx, r.SigningConfig.SigningSchemeOrKeyPath, r.SigningConfig.FileSignerPassword,
-		r.SigningConfig.TinkKEKURI, r.SigningConfig.TinkKeysetPath, r.SigningConfig.GCPKMSRetries, r.SigningConfig.GCPKMSTimeout)
+	signers, err := signer.NewMultipleFromConfig(ctx, r.SigningConfig)
 	if err != nil {
-		return LogRange{}, err
+		return LogRange{}, fmt.Errorf("creating signers: %w", err)
 	}
-	r.Signer = s
+	r.Signers = signers
+	r.Signer = signers[0]
 
-	// Initialize public key
-	pubKey, err := s.PublicKey(options.WithContext(ctx))
-	if err != nil {
-		return LogRange{}, err
-	}
-	pemPubKey, err := cryptoutils.MarshalPublicKeyToPEM(pubKey)
-	if err != nil {
-		return LogRange{}, err
-	}
-	r.PemPubKey = string(pemPubKey)
+	r.PemPubKeys = make([]string, len(signers))
+	r.LogIDs = make([]string, len(signers))
+	for i, s := range signers {
+		pubKey, err := s.PublicKey(options.WithContext(ctx))
+		if err != nil {
+			return LogRange{}, fmt.Errorf("getting public key for signer %d: %w", i, err)
+		}
+		pemPubKey, err := cryptoutils.MarshalPublicKeyToPEM(pubKey)
+		if err != nil {
+			return LogRange{}, fmt.Errorf("marshalling public key for signer %d: %w", i, err)
+		}
+		r.PemPubKeys[i] = string(pemPubKey)
 
-	keyID, err := cryptoutils.NewKeyIdentity(pubKey)
-	if err != nil {
-		return LogRange{}, err
+		keyID, err := cryptoutils.NewKeyIdentity(pubKey)
+		if err != nil {
+			return LogRange{}, fmt.Errorf("getting key identity for signer %d: %w", i, err)
+		}
+		r.LogIDs[i] = keyID.IDString()
 	}
-	r.LogID = keyID.IDString()
+	r.PemPubKey = r.PemPubKeys[0]
+	r.LogID = r.LogIDs[0]
 
 	return r, nil
 }
@@ -265,4 +274,25 @@ func (l *LogRanges) PublicKey(treeID string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("%d is not a valid tree ID and doesn't have an associated public key", tid)
+}
+
+// PublicKeys returns all PEM-encoded public keys for the given Tree ID.
+// Returns the active tree's keys when treeID is empty.
+func (l *LogRanges) PublicKeys(treeID string) ([]string, error) {
+	if treeID == "" {
+		return l.active.PemPubKeys, nil
+	}
+	tid, err := strconv.ParseInt(treeID, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	if tid == l.GetActive().TreeID {
+		return l.active.PemPubKeys, nil
+	}
+	for _, i := range l.inactive {
+		if i.TreeID == tid {
+			return i.PemPubKeys, nil
+		}
+	}
+	return nil, fmt.Errorf("%d is not a valid tree ID and doesn't have associated public keys", tid)
 }

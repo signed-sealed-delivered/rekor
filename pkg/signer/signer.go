@@ -19,6 +19,8 @@ package signer
 import (
 	"context"
 	"crypto"
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -38,8 +40,8 @@ import (
 	_ "github.com/sigstore/sigstore/pkg/signature/kms/hashivault"
 )
 
-// SigningConfig initializes the signer for a specific shard
-type SigningConfig struct {
+// SignerConfig configures a single signer.
+type SignerConfig struct {
 	SigningSchemeOrKeyPath string `json:"signingSchemeOrKeyPath" yaml:"signingSchemeOrKeyPath"`
 	FileSignerPassword     string `json:"fileSignerPassword" yaml:"fileSignerPassword"`
 	TinkKEKURI             string `json:"tinkKEKURI" yaml:"tinkKEKURI"`
@@ -48,9 +50,52 @@ type SigningConfig struct {
 	GCPKMSTimeout          uint   `json:"gcpkmsTimeout" yaml:"gcpkmsTimeout"`
 }
 
+// SigningConfig initializes signers for a specific shard.
+// For multi-signer mode, populate Signers with multiple entries; otherwise use the embedded SignerConfig fields.
+type SigningConfig struct {
+	SignerConfig
+
+	// Multiple signers; when more than one is configured, all entries are signed by each signer.
+	Signers []SignerConfig `json:"signers,omitempty" yaml:"signers,omitempty"`
+}
+
 func (sc SigningConfig) IsUnset() bool {
-	return sc.SigningSchemeOrKeyPath == "" && sc.FileSignerPassword == "" &&
-		sc.TinkKEKURI == "" && sc.TinkKeysetPath == ""
+	if len(sc.Signers) > 0 {
+		return false
+	}
+	return sc.SignerConfig == (SignerConfig{})
+}
+
+// GetSignerConfigs returns the list of individual signer configs.
+// If Signers is populated, those take precedence; otherwise the embedded SignerConfig is wrapped.
+func (sc SigningConfig) GetSignerConfigs() []SignerConfig {
+	if len(sc.Signers) > 0 {
+		return sc.Signers
+	}
+	return []SignerConfig{sc.SignerConfig}
+}
+
+// NewFromConfig creates a signer from a single SignerConfig.
+func NewFromConfig(ctx context.Context, cfg SignerConfig) (signature.Signer, error) {
+	return New(ctx, cfg.SigningSchemeOrKeyPath, cfg.FileSignerPassword,
+		cfg.TinkKEKURI, cfg.TinkKeysetPath, cfg.GCPKMSRetries, cfg.GCPKMSTimeout)
+}
+
+// NewMultipleFromConfig creates one signer per entry in cfg.GetSignerConfigs().
+func NewMultipleFromConfig(ctx context.Context, cfg SigningConfig) ([]signature.Signer, error) {
+	configs := cfg.GetSignerConfigs()
+	if len(configs) == 0 {
+		return nil, errors.New("no signer configurations provided")
+	}
+	signers := make([]signature.Signer, 0, len(configs))
+	for i, sc := range configs {
+		s, err := NewFromConfig(ctx, sc)
+		if err != nil {
+			return nil, fmt.Errorf("creating signer %d: %w", i, err)
+		}
+		signers = append(signers, s)
+	}
+	return signers, nil
 }
 
 func New(ctx context.Context, signer, pass, tinkKEKURI, tinkKeysetPath string, gcpkmsretries, gcpkmstimeout uint) (signature.Signer, error) {

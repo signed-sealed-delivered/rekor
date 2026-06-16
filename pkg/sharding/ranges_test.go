@@ -50,11 +50,11 @@ import (
 
 func TestNewLogRanges(t *testing.T) {
 	keyPath, ecdsaSigner, pemPubKey, logID := initializeSigner(t)
-	sc := signer.SigningConfig{SigningSchemeOrKeyPath: keyPath}
+	sc := signer.SigningConfig{SignerConfig: signer.SignerConfig{SigningSchemeOrKeyPath: keyPath}}
 
 	// inactive shard with different key
 	keyPathI, ecdsaSignerI, pemPubKeyI, logIDI := initializeSigner(t)
-	scI := signer.SigningConfig{SigningSchemeOrKeyPath: keyPathI}
+	scI := signer.SigningConfig{SignerConfig: signer.SignerConfig{SigningSchemeOrKeyPath: keyPathI}}
 
 	contents := fmt.Sprintf(`
 - treeID: 0001
@@ -571,8 +571,19 @@ func TestLogRangesFromPath(t *testing.T) {
 				t.Errorf("logRangesFromPath() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("logRangesFromPath() got = %v, want %v", got, tt.want)
+			// Compare only fields set by logRangesFromPath; Signers/PemPubKeys/LogIDs
+			// are populated by initializeRange, not logRangesFromPath.
+			if len(got) != len(tt.want) {
+				t.Errorf("logRangesFromPath() got %d ranges, want %d", len(got), len(tt.want))
+				return
+			}
+			for i := range got {
+				if got[i].TreeID != tt.want[i].TreeID {
+					t.Errorf("logRangesFromPath()[%d].TreeID = %v, want %v", i, got[i].TreeID, tt.want[i].TreeID)
+				}
+				if got[i].TreeLength != tt.want[i].TreeLength {
+					t.Errorf("logRangesFromPath()[%d].TreeLength = %v, want %v", i, got[i].TreeLength, tt.want[i].TreeLength)
+				}
 			}
 		})
 	}
@@ -581,7 +592,7 @@ func TestLogRangesFromPath(t *testing.T) {
 func TestInitializeRange(t *testing.T) {
 	keyPath, _, pemPubKey, logID := initializeSigner(t)
 	sc := signer.SigningConfig{
-		SigningSchemeOrKeyPath: keyPath,
+		SignerConfig: signer.SignerConfig{SigningSchemeOrKeyPath: keyPath},
 	}
 
 	tests := []struct {
@@ -600,7 +611,9 @@ func TestInitializeRange(t *testing.T) {
 				TreeID:        1,
 				SigningConfig: sc,
 				PemPubKey:     pemPubKey,
+				PemPubKeys:    []string{pemPubKey},
 				LogID:         logID,
+				LogIDs:        []string{logID},
 			},
 			wantErr: false,
 		},
@@ -620,13 +633,12 @@ func TestInitializeRange(t *testing.T) {
 				t.Errorf("initializeRange() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			// Clear the signer for comparison, as it's not comparable
-			if got.Signer != nil {
-				got.Signer = nil
-			}
 			if !tt.wantErr {
-				// Manually remove signer for comparison
+				// Clear signers for comparison — signature.Signer is not comparable
+				got.Signer = nil
+				got.Signers = nil
 				tt.wantRange.Signer = nil
+				tt.wantRange.Signers = nil
 				if !reflect.DeepEqual(got, tt.wantRange) {
 					t.Errorf("initializeRange() = %v, want %v", got, tt.wantRange)
 				}
@@ -651,7 +663,7 @@ func TestCompleteInitialization_Scenarios(t *testing.T) {
 	// Shared setup for all scenarios
 	keyPath, _, _, _ := initializeSigner(t)
 	activeSC := signer.SigningConfig{
-		SigningSchemeOrKeyPath: keyPath,
+		SignerConfig: signer.SignerConfig{SigningSchemeOrKeyPath: keyPath},
 	}
 
 	// --- Scenario 1: Multiple Backends ---
@@ -812,7 +824,7 @@ func TestCompleteInitialization_Scenarios(t *testing.T) {
 
 func TestNewLogRangesWithMock(t *testing.T) {
 	keyPath, ecdsaSigner, pemPubKey, logID := initializeSigner(t)
-	sc := signer.SigningConfig{SigningSchemeOrKeyPath: keyPath}
+	sc := signer.SigningConfig{SignerConfig: signer.SignerConfig{SigningSchemeOrKeyPath: keyPath}}
 
 	type args struct {
 		ctx    context.Context

@@ -67,8 +67,9 @@ func GetLogInfoHandler(params tlog.GetLogInfoParams) middleware.Responder {
 	hashString := hex.EncodeToString(root.RootHash)
 	treeSize := int64(root.TreeSize) //nolint:gosec
 
-	scBytes, err := util.CreateAndSignCheckpoint(ctx,
-		viper.GetString("rekor_server.hostname"), api.logRanges.GetActive().TreeID, root.TreeSize, root.RootHash, api.logRanges.GetActive().Signer)
+	activeRange := api.logRanges.GetActive()
+	scBytes, err := util.CreateAndSignCheckpointMultiple(ctx,
+		viper.GetString("rekor_server.hostname"), activeRange.TreeID, root.TreeSize, root.RootHash, activeRange.Signers)
 	if err != nil {
 		return handleRekorAPIError(params, http.StatusInternalServerError, err, sthGenerateError)
 	}

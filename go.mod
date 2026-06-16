@@ -235,3 +235,5 @@ require (
 )
 
 replace github.com/sigstore/sigstore => ../sigstore
+
+replace github.com/sigstore/protobuf-specs => ../protobuf-specs

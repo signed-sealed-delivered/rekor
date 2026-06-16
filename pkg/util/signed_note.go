@@ -65,7 +65,9 @@ func (s *SignedNote) Sign(identity string, signer signature.Signer, opts signatu
 }
 
 // Verify checks that one of the signatures can be successfully verified using
-// the supplied public key
+// the supplied public key. In multi-signer mode (multiple signatures with potentially
+// different key types), this function finds and verifies the signature matching the
+// verifier's key hash.
 func (s SignedNote) Verify(verifier signature.Verifier) bool {
 	if len(s.Signatures) == 0 {
 		return false
@@ -82,18 +84,38 @@ func (s SignedNote) Verify(verifier signature.Verifier) bool {
 		return false
 	}
 
-	for _, s := range s.Signatures {
-		sigBytes, err := base64.StdEncoding.DecodeString(s.Base64)
+	for _, sig := range s.Signatures {
+		// Skip signatures that don't match this verifier's key hash.
+		if sig.Hash != verifierPkHash {
+			continue
+		}
+
+		sigBytes, err := base64.StdEncoding.DecodeString(sig.Base64)
 		if err != nil {
 			return false
 		}
 
-		if s.Hash != verifierPkHash {
+		// Let the verifier handle hashing internally - it knows the appropriate
+		// hash function for its key type (SHA-256 for ECDSA/RSA, internal for Ed25519/ML-DSA)
+		if err := verifier.VerifySignature(bytes.NewReader(sigBytes), bytes.NewReader(msg)); err != nil {
 			return false
 		}
+		return true
+	}
+	return false
+}
 
-		// The verifier handles hashing internally based on its configured algorithm.
-		if err := verifier.VerifySignature(bytes.NewReader(sigBytes), bytes.NewReader(msg)); err != nil {
+// VerifyAll checks that ALL provided verifiers have corresponding valid signatures.
+// This is the recommended verification method for multi-signer mode, as it ensures
+// security from all signature algorithms (e.g., both ECDSA and ML-DSA must be valid).
+// Returns false if any verifier lacks a valid signature.
+func (s SignedNote) VerifyAll(verifiers []signature.Verifier) bool {
+	if len(s.Signatures) == 0 || len(verifiers) == 0 {
+		return false
+	}
+
+	for _, verifier := range verifiers {
+		if !s.Verify(verifier) {
 			return false
 		}
 	}
