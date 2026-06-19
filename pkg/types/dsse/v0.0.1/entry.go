@@ -18,15 +18,17 @@ package dsse
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/sha256"
+	stdx509 "crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/go-openapi/strfmt"
@@ -39,6 +41,7 @@ import (
 	"github.com/sigstore/rekor/pkg/pki/x509"
 	"github.com/sigstore/rekor/pkg/types"
 	dsseType "github.com/sigstore/rekor/pkg/types/dsse"
+	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"github.com/sigstore/sigstore/pkg/signature"
 	sigdsse "github.com/sigstore/sigstore/pkg/signature/dsse"
 )
@@ -46,6 +49,11 @@ import (
 const (
 	APIVERSION = "0.0.1"
 )
+
+type verifiedSig struct {
+	sig string
+	key *x509.PublicKey
+}
 
 func init() {
 	if err := dsseType.VersionMap.SetEntryFactory(APIVERSION, NewEntry); err != nil {
@@ -284,28 +292,20 @@ func (v *V001Entry) Unmarshal(pe models.ProposedEntry) error {
 		allPubKeyBytes = append(allPubKeyBytes, publicKey)
 	}
 
-	sigToKeyMap, err := verifyEnvelope(allPubKeyBytes, env)
+	verifiedSigs, err := verifyEnvelope(allPubKeyBytes, env)
 	if err != nil {
 		return err
 	}
 
-	// we need to ensure we canonicalize the ordering of signatures
-	sortedSigs := make([]string, 0, len(sigToKeyMap))
-	for sig := range sigToKeyMap {
-		sortedSigs = append(sortedSigs, sig)
-	}
-	sort.Strings(sortedSigs)
-
-	for i, sig := range sortedSigs {
-		key := sigToKeyMap[sig]
-		canonicalizedKey, err := key.CanonicalValue()
+	for _, vs := range verifiedSigs {
+		canonicalizedKey, err := vs.key.CanonicalValue()
 		if err != nil {
 			return err
 		}
 		b64CanonicalizedKey := strfmt.Base64(canonicalizedKey)
 
 		dsseObj.Signatures = append(dsseObj.Signatures, &models.DSSEV001SchemaSignaturesItems0{
-			Signature: &sortedSigs[i],
+			Signature: &vs.sig,
 			Verifier:  &b64CanonicalizedKey,
 		})
 	}
@@ -381,10 +381,6 @@ func (v *V001Entry) Canonicalize(_ context.Context) ([]byte, error) {
 		}
 	}
 
-	sort.Slice(canonicalEntry.Signatures, func(i, j int) bool {
-		return *canonicalEntry.Signatures[i].Signature < *canonicalEntry.Signatures[j].Signature
-	})
-
 	itObj := models.DSSE{}
 	itObj.APIVersion = conv.Pointer(APIVERSION)
 	itObj.Spec = &canonicalEntry
@@ -441,12 +437,12 @@ func (v V001Entry) CreateFromArtifactProperties(_ context.Context, props types.A
 		}
 	}
 
-	keysBySig, err := verifyEnvelope(allPubKeyBytes, env)
+	verifiedSigs, err := verifyEnvelope(allPubKeyBytes, env)
 	if err != nil {
 		return nil, err
 	}
-	for _, key := range keysBySig {
-		canonicalKey, err := key.CanonicalValue()
+	for _, vs := range verifiedSigs {
+		canonicalKey, err := vs.key.CanonicalValue()
 		if err != nil {
 			return nil, err
 		}
@@ -462,17 +458,20 @@ func (v V001Entry) CreateFromArtifactProperties(_ context.Context, props types.A
 
 // verifyEnvelope takes in an array of possible key bytes and attempts to parse them as x509 public keys.
 // it then uses these to verify the envelope and makes sure that every signature on the envelope is verified.
-// it returns a map of verifiers indexed by the signature the verifier corresponds to.
-func verifyEnvelope(allPubKeyBytes [][]byte, env *dsse.Envelope) (map[string]*x509.PublicKey, error) {
-	// generate a fake id for these keys so we can get back to the key bytes and match them to their corresponding signature
+// it returns the verified signatures in envelope order, each paired with the key that verified it.
+//
+// For dual-key certificates (ITU-T X.509 Annex K), the SubjectAltPublicKeyInfo extension (OID 2.5.29.72)
+// is also tried, allowing a single cert to verify both signatures. Both signatures are mapped to the
+// primary cert key so the stored verifier is the cert in both cases.
+func verifyEnvelope(allPubKeyBytes [][]byte, env *dsse.Envelope) ([]verifiedSig, error) {
 	verifierBySig := make(map[string]*x509.PublicKey)
-	allSigs := make(map[string]struct{})
+	unverified := make(map[string]struct{})
 	for _, sig := range env.Signatures {
-		allSigs[sig.Sig] = struct{}{}
+		unverified[sig.Sig] = struct{}{}
 	}
 
 	for _, pubKeyBytes := range allPubKeyBytes {
-		if len(allSigs) == 0 {
+		if len(unverified) == 0 {
 			break // if all signatures have been verified, do not attempt anymore
 		}
 		key, err := x509.NewPublicKey(bytes.NewReader(pubKeyBytes))
@@ -480,32 +479,53 @@ func verifyEnvelope(allPubKeyBytes [][]byte, env *dsse.Envelope) (map[string]*x5
 			return nil, fmt.Errorf("could not parse public key as x509: %w", err)
 		}
 
-		vfr, err := signature.LoadDefaultVerifier(key.CryptoPubKey())
-		if err != nil {
-			return nil, fmt.Errorf("could not load verifier: %w", err)
+		// Build the list of crypto keys to try from this verifier entry.
+		// For a dual-key certificate the SubjectAltPublicKeyInfo key is also included.
+		cryptoKeys := []crypto.PublicKey{key.CryptoPubKey()}
+		block, _ := pem.Decode(pubKeyBytes)
+		if block != nil && cryptoutils.PEMType(block.Type) == cryptoutils.CertificatePEMType {
+			if cert, err := stdx509.ParseCertificate(block.Bytes); err == nil {
+				if altPub, err := cryptoutils.GetEmbeddedAltPublicKey(cert); err == nil {
+					cryptoKeys = append(cryptoKeys, altPub)
+				}
+			}
 		}
 
-		dsseVfr, err := dsse.NewEnvelopeVerifier(&sigdsse.VerifierAdapter{SignatureVerifier: vfr})
-		if err != nil {
-			return nil, fmt.Errorf("could not use public key as a dsse verifier: %w", err)
-		}
-
-		accepted, err := dsseVfr.Verify(context.Background(), env)
-		if err != nil {
-			return nil, fmt.Errorf("could not verify envelope: %w", err)
-		}
-
-		for _, accept := range accepted {
-			delete(allSigs, accept.Sig.Sig)
-			verifierBySig[accept.Sig.Sig] = key
+		for _, cryptoKey := range cryptoKeys {
+			if len(unverified) == 0 {
+				break
+			}
+			vfr, err := signature.LoadDefaultVerifier(cryptoKey)
+			if err != nil {
+				continue
+			}
+			dsseVfr, err := dsse.NewEnvelopeVerifier(&sigdsse.VerifierAdapter{SignatureVerifier: vfr})
+			if err != nil {
+				continue
+			}
+			accepted, err := dsseVfr.Verify(context.Background(), env)
+			if err != nil {
+				continue
+			}
+			for _, accept := range accepted {
+				delete(unverified, accept.Sig.Sig)
+				// Always store the primary cert key so the verifier in the log entry
+				// is the cert regardless of which key within it verified the signature.
+				verifierBySig[accept.Sig.Sig] = key
+			}
 		}
 	}
 
-	if len(allSigs) > 0 {
+	if len(unverified) > 0 {
 		return nil, errors.New("all signatures must have a key that verifies it")
 	}
 
-	return verifierBySig, nil
+	// Return in envelope signature order so callers can rely on index-stable ordering.
+	result := make([]verifiedSig, 0, len(env.Signatures))
+	for _, sig := range env.Signatures {
+		result = append(result, verifiedSig{sig: sig.Sig, key: verifierBySig[sig.Sig]})
+	}
+	return result, nil
 }
 
 func (v V001Entry) Verifiers() ([]pkitypes.PublicKey, error) {
